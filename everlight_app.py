@@ -769,22 +769,14 @@ elif page == "🤖 AI綜合預測":
     try:
         if len(df) >= 20:
             ma5, ma20, h20, vma20, vc = df["Close"].rolling(5).mean().iloc[-1], df["Close"].rolling(20).mean().iloc[-1], df["High"].rolling(20).max().iloc[-1], df["Volume"].rolling(20).mean().iloc[-1], df["Volume"].iloc[-1]
-            if curr > ma5:
-                ts += 10
-            if curr > ma20:
-                ts += 20
-            if curr >= h20 * 0.99:
-                ts += 25
-            if vc > vma20:
-                ts += 20
-            if curr >= open_p:
-                ts += 10
-            if curr > prev_c and vc > df["Volume"].iloc[-2]:
-                ts += 15
-        else:
-            ts = 50
-    except Exception:
-        ts = 50
+            if curr > ma5: ts += 10
+            if curr > ma20: ts += 20
+            if curr >= h20 * 0.99: ts += 25
+            if vc > vma20: ts += 20
+            if curr >= open_p: ts += 10
+            if curr > prev_c and vc > df["Volume"].iloc[-2]: ts += 15
+        else: ts = 50
+    except Exception: ts = 50
     ts = max(0, min(100, ts))
 
     try:
@@ -802,59 +794,39 @@ elif page == "🤖 AI綜合預測":
             if tv > 0:
                 buy_pct = bv / tv
                 sell_pct = 1 - buy_pct
-            if curr > vwap:
-                ids += 20
-            if buy_pct > 0.6:
-                ids += 25
-            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2:
-                ids += 20
-            if hd > 0 and (hd - curr) / hd < 0.01:
-                ids += 15
-            if amp > 0.03:
-                ids += 10
-        else:
-            ids = 50
-    except Exception:
-        ids = 50
+            if curr > vwap: ids += 20
+            if buy_pct > 0.6: ids += 25
+            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2: ids += 20
+            if hd > 0 and (hd - curr) / hd < 0.01: ids += 15
+            if amp > 0.03: ids += 10
+        else: ids = 50
+    except Exception: ids = 50
     ids = max(0, min(100, ids))
 
     try:
         if bids and asks:
             bv, av = sum(x.get("size", 0) for x in bids), sum(x.get("size", 0) for x in asks)
             tba = bv + av
-            if bv > av:
-                cs += 20
-            if tba > 0 and (bv - av) / tba > 0.2:
-                cs += 20
-            if bids and bids[0].get("size", 0) > 100:
-                cs += 20
-            if bv > av * 1.5:
-                cs += 20
+            if bv > av: cs += 20
+            if tba > 0 and (bv - av) / tba > 0.2: cs += 20
+            if bids and bids[0].get("size", 0) > 100: cs += 20
+            if bv > av * 1.5: cs += 20
             cs += 20
-        else:
-            cs = 50
-    except Exception:
-        cs = 50
+        else: cs = 50
+    except Exception: cs = 50
     cs = max(0, min(100, cs))
 
     try:
         info, _ = fetch_fundamentals(symbol, suffix)
         if info:
             e, r, d, p, g = info.get("trailingEps"), info.get("returnOnEquity"), info.get("dividendYield"), info.get("trailingPE"), info.get("revenueGrowth")
-            if e and e > 10:
-                fs += 20
-            if r and r > 0.15:
-                fs += 20
-            if d and d > 0.05:
-                fs += 20
-            if p and 0 < p < 20:
-                fs += 20
-            if g and g > 0:
-                fs += 20
-        else:
-            fs = 50
-    except Exception:
-        fs = 50
+            if e and e > 10: fs += 20
+            if r and r > 0.15: fs += 20
+            if d and d > 0.05: fs += 20
+            if p and 0 < p < 20: fs += 20
+            if g and g > 0: fs += 20
+        else: fs = 50
+    except Exception: fs = 50
     fs = max(0, min(100, fs))
 
     tot = ts * 0.3 + ids * 0.25 + cs * 0.2 + fs * 0.25
@@ -879,6 +851,166 @@ elif page == "🤖 AI綜合預測":
     m3.markdown(f"<div class='card' style='height:100%; border-top:4px solid #ff3b3b;'><h4 style='color:#ccc; margin-bottom:5px;'>3️⃣ 籌碼五檔</h4><div style='font-size:32px; font-weight:bold; color:#ff3b3b; margin-bottom:10px;'>{cs:.0f}<span style='font-size:14px; color:#888;'> / 100</span></div><p style='color:#bbb; font-size:14px; line-height:1.5;'>觀測最佳五檔買賣壓差、掛單積極度與大戶即時敲單方向。</p></div>", unsafe_allow_html=True)
     m4.markdown(f"<div class='card' style='height:100%; border-top:4px solid #aa00ff;'><h4 style='color:#ccc; margin-bottom:5px;'>4️⃣ 基本面</h4><div style='font-size:32px; font-weight:bold; color:#aa00ff; margin-bottom:10px;'>{fs:.0f}<span style='font-size:14px; color:#888;'> / 100</span></div><p style='color:#bbb; font-size:14px; line-height:1.5;'>評估企業EPS獲利能力、ROE回報率、殖利率防禦及估值高低。</p></div>", unsafe_allow_html=True)
 
+    # =====================
+    # 🧠 籌碼推估：主力 / 外資成本區
+    # =====================
+    st.markdown("---")
+    st.markdown("### 🧠 籌碼推估：主力 / 外資成本區")
+
+    inst_df = fetch_institutional_chips(symbol, FINMIND_TOKEN)
+    
+    f_status = "外資觀望"
+    f_status_color = "#aaa"
+    f_sum_5 = 0
+    f_streak_txt = "無"
+    f_est_cost = "N/A"
+    
+    if not inst_df.empty and '外資' in inst_df.columns:
+        recent_20 = inst_df.tail(20).copy()
+        f_sum_5 = recent_20.tail(5)['外資'].sum()
+        
+        if f_sum_5 > 0:
+            f_status, f_status_color = "外資偏進貨", "#ff3b3b"
+        elif f_sum_5 < 0:
+            f_status, f_status_color = "外資偏出貨", "#00e676"
+            
+        f_streak = 0
+        is_buy = None
+        for val in reversed(recent_20['外資'].tolist()):
+            if is_buy is None:
+                if val == 0: break
+                is_buy = val > 0
+            if (val > 0 and is_buy) or (val < 0 and not is_buy):
+                f_streak += 1
+            else:
+                break
+        if f_streak > 0:
+            f_streak_txt = f"連 {f_streak} 買" if is_buy else f"連 {f_streak} 賣"
+            
+        try:
+            temp_df = df.copy()
+            temp_df.index = temp_df.index.strftime('%Y-%m-%d')
+            merged = pd.merge(recent_20, temp_df[['Close']], left_on='date', right_index=True, how='left')
+            buys = merged[merged['外資'] > 0]
+            if not buys.empty and not buys['Close'].isna().all():
+                tot_cost = (buys['外資'] * buys['Close']).sum()
+                tot_vol = buys['外資'].sum()
+                if tot_vol > 0:
+                    f_est_cost = f"{tot_cost / tot_vol:.2f}"
+        except Exception:
+            pass
+            
+    m_status = "主力觀望"
+    m_status_color = "#aaa"
+    m_vwap = "N/A"
+    m_max_vol_p = "N/A"
+    m_max_vol_times = "無" 
+    
+    vwap_val = curr
+    if not df_i_for_summary.empty:
+        vol_sum = df_i_for_summary["Volume"].sum()
+        if vol_sum > 0:
+            vwap_val = (df_i_for_summary["Close"] * df_i_for_summary["Volume"]).sum() / vol_sum
+            m_vwap = f"{vwap_val:.2f}"
+            
+    if trades:
+        pv = {}
+        for t in trades:
+            try:
+                p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+                s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+                if p > 0 and s > 0:
+                    pv[p] = pv.get(p, 0) + s
+            except Exception:
+                pass
+        
+        if pv:
+            max_p = max(pv, key=pv.get)
+            m_max_vol_p = f"{max_p:.2f}"
+            
+            # 統計大量成交價在哪些分鐘成交量最大
+            minute_vol = {}
+            for t in trades:
+                try:
+                    p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+                    s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+                    tm = format_trade_time(t.get("time", t.get("at", t.get("date", ""))))
+
+                    if p == max_p and s > 0 and tm:
+                        minute_key = str(tm)[:5]  # HH:MM
+                        minute_vol[minute_key] = minute_vol.get(minute_key, 0) + s
+                except Exception:
+                    pass
+
+            if minute_vol:
+                top_times = sorted(minute_vol.items(), key=lambda x: x[1], reverse=True)[:3]
+                m_max_vol_times = "、".join([x[0] for x in top_times])
+            
+    if curr > vwap_val and buy_pct > 0.6:
+        m_status, m_status_color = "主力疑似進貨", "#ff3b3b"
+    elif curr < vwap_val and buy_pct < 0.45:
+        m_status, m_status_color = "主力疑似出貨", "#00e676"
+        
+    c_f1, c_f2, c_m1, c_m2 = st.columns(4)
+    c_f1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {f_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>外資狀態</h4><div style='font-size:24px; font-weight:bold; color:{f_status_color}; margin-bottom:10px;'>{f_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>近5日買賣超：<span style='color:{'#ff3b3b' if f_sum_5>0 else '#00e676' if f_sum_5<0 else '#fff'};'>{f_sum_5:,.0f}</span> 張<br>連買 / 連賣：{f_streak_txt}</p></div>", unsafe_allow_html=True)
+    c_f2.markdown(f"<div class='card' style='height:100%; border-left:4px solid #00e5ff;'><h4 style='color:#ccc; margin-bottom:5px;'>外資估算成本</h4><div style='font-size:28px; font-weight:bold; color:#00e5ff; margin-bottom:5px;'>{f_est_cost} <span style='font-size:16px;'>元</span></div><p style='color:#888; font-size:12px; margin:0;'>估算值，非真實成交均價</p></div>", unsafe_allow_html=True)
+    c_m1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {m_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>主力狀態</h4><div style='font-size:24px; font-weight:bold; color:{m_status_color}; margin-bottom:10px;'>{m_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>主動買盤：<span style='color:{'#ff3b3b' if buy_pct>0.5 else '#00e676'};'>{buy_pct*100:.1f}%</span></p></div>", unsafe_allow_html=True)
+    c_m2.markdown(f"<div class='card' style='height:100%; border-left:4px solid #ffcc00;'><h4 style='color:#ccc; margin-bottom:5px;'>主力疑似成本區</h4><p style='color:#bbb; font-size:15px; margin:5px 0;'>成交量加權均價 (VWAP)：<span style='font-weight:bold; color:#fff;'>{m_vwap}</span> 元<br>大量成交價：<span style='font-weight:bold; color:#fff;'>{m_max_vol_p}</span> 元<br>集中時間：約 <span style='color:#ddd;'>{m_max_vol_times}</span></p></div>", unsafe_allow_html=True)
+
+    # =====================
+    # 🐋 大戶 / 中實戶 / 散戶成交結構
+    # =====================
+    st.markdown("---")
+    st.markdown("### 🐋 大戶 / 中實戶 / 散戶成交結構")
+    st.caption("⚠️ 此為依單筆成交量與成交價變化推估，非交易所真實身分資料。")
+
+    if not trades:
+        st.info("📡 成交明細不足，無法估算大戶結構")
+    else:
+        w_b = w_s = 0
+        m_b = m_s = 0
+        r_b = r_s = 0
+        
+        last_p = prev_c
+        for t in reversed(trades):
+            try:
+                p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+                v = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+                if p == 0 or v == 0: continue
+                
+                is_buy = p >= last_p
+                if v >= 50:
+                    if is_buy: w_b += v
+                    else: w_s += v
+                elif v >= 20:
+                    if is_buy: m_b += v
+                    else: m_s += v
+                else:
+                    if is_buy: r_b += v
+                    else: r_s += v
+                
+                last_p = p
+            except Exception:
+                pass
+                
+        w_net = w_b - w_s
+        m_net = m_b - m_s
+        r_net = r_b - r_s
+        
+        def get_grp_stat(b, s, n):
+            if b > s: return f"{n}偏進貨", "#ff3b3b"
+            elif b < s: return f"{n}偏出貨", "#00e676"
+            else: return f"{n}觀望", "#aaa"
+            
+        w_stat, w_c = get_grp_stat(w_b, w_s, "大戶")
+        m_stat, m_c = get_grp_stat(m_b, m_s, "中實戶")
+        r_stat, r_c = get_grp_stat(r_b, r_s, "散戶")
+        
+        c_w, c_m, c_r = st.columns(3)
+        c_w.markdown(f"<div class='card' style='border-left:4px solid {w_c};'><h4 style='color:#ccc; margin-bottom:5px;'>大戶 (>=50張)</h4><div style='font-size:24px; font-weight:bold; color:{w_c}; margin-bottom:10px;'>{w_stat}</div><p style='color:#bbb; font-size:15px; margin:0; line-height:1.6;'>買進量：<span style='color:#ff3b3b;'>{w_b:,}</span> 張<br>賣出量：<span style='color:#00e676;'>{w_s:,}</span> 張<br>淨量：<span style='color:{w_c};'>{w_net:+,}</span> 張</p></div>", unsafe_allow_html=True)
+        c_m.markdown(f"<div class='card' style='border-left:4px solid {m_c};'><h4 style='color:#ccc; margin-bottom:5px;'>中實戶 (20~49張)</h4><div style='font-size:24px; font-weight:bold; color:{m_c}; margin-bottom:10px;'>{m_stat}</div><p style='color:#bbb; font-size:15px; margin:0; line-height:1.6;'>買進量：<span style='color:#ff3b3b;'>{m_b:,}</span> 張<br>賣出量：<span style='color:#00e676;'>{m_s:,}</span> 張<br>淨量：<span style='color:{m_c};'>{m_net:+,}</span> 張</p></div>", unsafe_allow_html=True)
+        c_r.markdown(f"<div class='card' style='border-left:4px solid {r_c};'><h4 style='color:#ccc; margin-bottom:5px;'>散戶 (&lt;20張)</h4><div style='font-size:24px; font-weight:bold; color:{r_c}; margin-bottom:10px;'>{r_stat}</div><p style='color:#bbb; font-size:15px; margin:0; line-height:1.6;'>買進量：<span style='color:#ff3b3b;'>{r_b:,}</span> 張<br>賣出量：<span style='color:#00e676;'>{r_s:,}</span> 張<br>淨量：<span style='color:{r_c};'>{r_net:+,}</span> 張</p></div>", unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown("### 📝 AI 深度解析報告")
     txt_t = f"從技術線型來看，目前股價得分 {ts:.0f} 分。短中期均線排列決定了趨勢的延續性，而相對於20日高低點的位置，反映出市場突破企圖心。配合近期量能變化，整體技術結構顯示 {'多方掌控' if ts>=60 else '空方壓制' if ts<40 else '橫盤震盪'}。建議密切觀察關鍵壓力與支撐的攻防。"
@@ -887,7 +1019,6 @@ elif page == "🤖 AI綜合預測":
     txt_f = f"基本面價值評估獲得 {fs:.0f} 分。公司的獲利數據直接反映其長期營運能力與股東資本回報率。配合目前的本益比與股價淨值比區間，可判斷當前股價是否具備估值優勢。近期營收的成長率是支撐股價上行的重要催化劑。高股息殖利率亦能為股價提供防禦保護。"
     txt_all = f"綜合四大面向模型，目前標的總評分為 **{tot:.1f}** 分，系統判定為「**{tg}**」。偏多底氣主要來自於資金動能的匯聚與技術關卡的突破；偏空風險則潛藏於短線過熱或基本面估值過高的疑慮之中。短線操作建議以 VWAP 作為當沖多空分水嶺，中長線投資人則應緊盯即將公布的營收與財報數據。主力大戶的籌碼堆疊方向，預示著未來的潛在走勢。<br><br><span style='color:#ff3b3b;'>⚠️ 本分析模型基於量化數據自動生成，僅供觀察參考，不構成任何買賣建議。</span>"
     st.markdown(f"<div style='display:grid; grid-template-columns: 1fr 1fr; gap: 20px;'><div class='card'><h4>📈 技術與盤中動能</h4><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>技術面：</b>{txt_t}</p><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>即時盤中：</b>{txt_i}</p></div><div class='card'><h4>💼 籌碼與基本面價值</h4><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>籌碼五檔：</b>{txt_c}</p><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>基本面：</b>{txt_f}</p></div></div><div class='card' style='margin-top:20px; border:1px solid #555; background:#151515;'><h3 style='color:#ffcc00; margin-bottom:10px;'>🎯 AI 綜合總結建議</h3><p style='color:#eee; font-size:16px; line-height:1.8;'>{txt_all}</p></div>", unsafe_allow_html=True)
-
 # =====================
 # 📑 基本面分析
 # =====================
