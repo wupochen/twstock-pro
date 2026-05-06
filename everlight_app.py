@@ -3,8 +3,10 @@ import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import requests, os, feedparser
+import requests
+import os
 from datetime import datetime, timezone, timedelta
+import feedparser
 from urllib.parse import quote
 from streamlit_autorefresh import st_autorefresh
 
@@ -14,21 +16,55 @@ st.markdown("""
 <style>
 html,body,[class*='st-']{background-color:#000;color:#eee;}
 .block-container{padding:1rem!important; max-width:98%!important;}
-.stTextInput input,.stNumberInput input{background-color:#222!important;color:#fff!important;border:1px solid #555!important;}
-.order-table{width:100%;border-collapse:collapse;font-family:Consolas,"Courier New",monospace;font-size:18px;}
-.order-table th{color:#aaa;font-size:15px;border-bottom:1px solid #333;padding:8px 4px;text-align:center;}
-.order-table td{padding:7px 4px;vertical-align:middle;}
+.stTextInput input,.stNumberInput input{
+    background-color:#222!important;
+    color:#fff!important;
+    border:1px solid #555!important;
+}
+.order-table{
+    width:100%;
+    border-collapse:collapse;
+    font-family:Consolas,"Courier New",monospace;
+    font-size:18px;
+}
+.order-table th{
+    color:#aaa;
+    font-size:15px;
+    border-bottom:1px solid #333;
+    padding:8px 4px;
+    text-align:center;
+}
+.order-table td{
+    padding:7px 4px;
+    vertical-align:middle;
+}
 .order-price{font-weight:bold;font-size:20px;}
-.bar-bg{width:100%;height:16px;background:#1a1a1a;border-radius:3px;position:relative;}
+.bar-bg{
+    width:100%;
+    height:16px;
+    background:#1a1a1a;
+    border-radius:3px;
+    position:relative;
+}
 .buy-bar{height:16px;background:#ff3b3b;border-radius:3px;float:right;}
 .sell-bar{height:16px;background:#00e676;border-radius:3px;float:left;}
-.card{background:#111;padding:16px;border-radius:10px;border:1px solid #333;}
+.card{
+    background:#050505;
+    padding:16px;
+    border-radius:10px;
+    border:1px solid #333;
+}
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_data(ttl=86400)
 def load_market_dict():
-    d = {"1711":"永光","永光":"1711","2330":"台積電","台積電":"2330","2313":"華通","華通":"2313"}
+    d = {
+        "1711":"永光","永光":"1711",
+        "2330":"台積電","台積電":"2330",
+        "2313":"華通","華通":"2313"
+    }
+
     try:
         r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL", timeout=5)
         if r.status_code == 200:
@@ -37,6 +73,7 @@ def load_market_dict():
                 d[i["Name"]] = i["Code"]
     except:
         pass
+
     try:
         r2 = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", timeout=5)
         if r2.status_code == 200:
@@ -48,18 +85,24 @@ def load_market_dict():
                     d[name] = code
     except:
         pass
+
     return d
 
 MASTER_DICT = load_market_dict()
 
-c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
+c1, c2, c3, c4 = st.columns([3, 2, 2.4, 2.5])
 
 with c1:
-    page = st.radio("📌 頁面切換", ["📊 K線分析", "⚡ 即時趨勢", "📰 AI新聞預測"], horizontal=True)
+    page = st.radio(
+        "📌 頁面切換",
+        ["📊 K線分析", "⚡ 即時趨勢", "📰 AI新聞預測"],
+        horizontal=True
+    )
 
 with c2:
     raw_input = st.text_input("🔍 股票代號 / 名稱", "1711")
     user_input = raw_input.replace("　", "").replace(" ", "").strip()
+
     if user_input.isdigit():
         symbol = user_input
         stock_name = MASTER_DICT.get(symbol, symbol)
@@ -71,9 +114,19 @@ with c3:
     tf_label = st.selectbox("📈 K線週期", ["日K", "週K", "月K"])
     tf_map = {"日K":"1d", "週K":"1wk", "月K":"1mo"}
     period_map = {"日K":"6mo", "週K":"2y", "月K":"5y"}
+
     tf = tf_map[tf_label]
     period = period_map[tf_label]
+
     time_unit = {"日K":"日線", "週K":"週線", "月K":"月線"}[tf_label]
+
+    ma_col1, ma_col2, ma_col3 = st.columns(3)
+    with ma_col1:
+        show_ma5 = st.checkbox("5線", value=True)
+    with ma_col2:
+        show_ma10 = st.checkbox("10線", value=True)
+    with ma_col3:
+        show_ma20 = st.checkbox("20線", value=True)
 
 with c4:
     TOKEN_FILE = "fugle_token.txt"
@@ -84,8 +137,10 @@ with c4:
                 return st.secrets["FUGLE_API"]
         except:
             pass
+
         if os.path.exists(TOKEN_FILE):
             return open(TOKEN_FILE, "r").read().strip()
+
         return ""
 
     api_key = st.text_input("🔑 Fugle Token", value=get_token(), type="password")
@@ -100,8 +155,10 @@ with c4:
             f.write(api_key)
 
 p1, p2 = st.columns(2)
+
 with p1:
     qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
+
 with p2:
     cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
 
@@ -115,8 +172,16 @@ def flatten_columns(df):
 @st.cache_data(ttl=30)
 def fetch_history(symbol, period, interval):
     symbol = str(symbol).strip()
+
     try:
-        df = yf.download(f"{symbol}.TW", period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
+        df = yf.download(
+            f"{symbol}.TW",
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            threads=False
+        )
         suffix = ".TW"
     except:
         df = pd.DataFrame()
@@ -124,7 +189,14 @@ def fetch_history(symbol, period, interval):
 
     if df.empty:
         try:
-            df = yf.download(f"{symbol}.TWO", period=period, interval=interval, auto_adjust=False, progress=False, threads=False)
+            df = yf.download(
+                f"{symbol}.TWO",
+                period=period,
+                interval=interval,
+                auto_adjust=False,
+                progress=False,
+                threads=False
+            )
             suffix = ".TWO"
         except:
             df = pd.DataFrame()
@@ -134,7 +206,7 @@ def fetch_history(symbol, period, interval):
 
     if not df.empty:
         df = df.dropna(subset=["Open", "High", "Low", "Close"])
-        df = df.tail(80)
+        df = df.tail(120)
 
     return df, suffix
 
@@ -170,6 +242,7 @@ def fetch_intraday(symbol, suffix):
 def fetch_fugle_quote(symbol, api_key):
     if not api_key:
         return {}
+
     try:
         r = requests.get(
             f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}",
@@ -180,21 +253,26 @@ def fetch_fugle_quote(symbol, api_key):
             return r.json()
     except:
         pass
+
     return {}
 
 def fetch_fugle_trades(symbol, api_key):
     if not api_key:
         return []
+
     try:
         r = requests.get(
             f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/trades/{symbol}",
             headers={"X-API-KEY": api_key},
             timeout=3
         )
+
         if r.status_code == 200:
             data = r.json()
+
             if isinstance(data, list):
                 return data
+
             if isinstance(data, dict):
                 if isinstance(data.get("data"), list):
                     return data["data"]
@@ -202,6 +280,7 @@ def fetch_fugle_trades(symbol, api_key):
                     return data["trades"]
     except:
         pass
+
     return []
 
 def price_color(price, prev_c):
@@ -216,6 +295,7 @@ def price_color(price, prev_c):
 def volume_colors(df_plot):
     colors = []
     prev_close = None
+
     for _, row in df_plot.iterrows():
         close = row.get("Close", None)
         open_p = row.get("Open", None)
@@ -229,33 +309,56 @@ def volume_colors(df_plot):
 
         colors.append("rgba(255,59,59,0.65)" if is_up else "rgba(0,230,118,0.65)")
         prev_close = close
+
     return colors
 
 def format_trade_time(raw_time):
     try:
         raw_str = str(raw_time).strip()
+
         if raw_str.isdigit():
             ts = float(raw_str)
             if len(raw_str) > 10:
                 ts = ts / (10 ** (len(raw_str) - 10))
             dt = datetime.fromtimestamp(ts, tz=timezone(timedelta(hours=8)))
             return dt.strftime("%H:%M:%S")
+
         return raw_str.split("T")[-1].split(".")[0] if "T" in raw_str else raw_str.split(".")[0]
     except:
         return str(raw_time)[:8]
 
 def donut_chart(title, value, label, color):
     value = max(0, min(100, int(value)))
-    fig = go.Figure(data=[go.Pie(values=[value, 100-value], hole=0.72, textinfo="none", sort=False, marker=dict(colors=[color, "#222"]), showlegend=False)])
+
+    fig = go.Figure(data=[
+        go.Pie(
+            values=[value, 100 - value],
+            hole=0.72,
+            textinfo="none",
+            sort=False,
+            marker=dict(colors=[color, "#222"]),
+            showlegend=False
+        )
+    ])
+
     fig.update_layout(
         template="plotly_dark",
         height=260,
         margin=dict(l=5, r=5, t=40, b=5),
         title=dict(text=title, x=0.5, font=dict(size=20)),
-        annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))],
-        paper_bgcolor="#111",
-        plot_bgcolor="#111"
+        annotations=[
+            dict(
+                text=f"<b>{value}%</b><br>{label}",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=24, color="#fff")
+            )
+        ],
+        paper_bgcolor="#000",
+        plot_bgcolor="#000"
     )
+
     return fig
 
 def render_order_book(bids, asks, prev_c, curr):
@@ -265,7 +368,9 @@ def render_order_book(bids, asks, prev_c, curr):
 
     all_vols = [x.get("size", 0) for x in bids + asks]
     max_v = max(all_vols) if all_vols else 1
-    buy5, sell5 = bids[:5], asks[:5]
+
+    buy5 = bids[:5]
+    sell5 = asks[:5]
     rows = ""
 
     for i in range(5):
@@ -292,11 +397,13 @@ def render_order_book(bids, asks, prev_c, curr):
 
 def render_trade_details(trades, prev_c):
     st.markdown("### 📜 成交明細")
+
     if not trades:
         st.info("📡 尚無成交明細資料。")
         return
 
     rows = []
+
     for t in trades[:12]:
         price = t.get("price", t.get("tradePrice", 0))
         size = t.get("size", t.get("tradeVolume", t.get("volume", 0)))
@@ -315,42 +422,55 @@ def render_trade_details(trades, prev_c):
     html = f"<div class='card'><table style='width:100%;border-collapse:collapse;font-family:Consolas,\"Courier New\",monospace;font-size:16px;'><thead><tr style='color:#aaa;border-bottom:1px solid #444;'><th style='text-align:left;padding:8px 6px;'>時間</th><th style='text-align:right;padding:8px 6px;'>成交價</th><th style='text-align:right;padding:8px 6px;'>成交量</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
     st.markdown(html, unsafe_allow_html=True)
 
+def build_price_volume(trades, df_i):
+    price_volume = {}
+
+    for t in trades:
+        price = t.get("price", t.get("tradePrice", 0))
+        size = t.get("size", t.get("tradeVolume", t.get("volume", 0)))
+
+        try:
+            price = float(price)
+            size = int(size)
+        except:
+            continue
+
+        if price > 0 and size > 0:
+            price_volume[price] = price_volume.get(price, 0) + size
+
+    if not price_volume and df_i is not None and not df_i.empty and "Volume" in df_i.columns:
+        temp = df_i.copy()
+        temp["成交價"] = temp["Close"].round(2)
+        grouped = temp.groupby("成交價")["Volume"].sum()
+
+        for price, vol in grouped.items():
+            try:
+                price_volume[float(price)] = int(vol)
+            except:
+                pass
+
+    return price_volume
+
 def render_volume_summary(bids, asks, trades, df_i, prev_c):
     st.markdown("### 📊 委託 / 成交量統計")
 
     bid_total = sum([x.get("size", 0) for x in bids])
     ask_total = sum([x.get("size", 0) for x in asks])
     total_order = bid_total + ask_total
-    price_volume = {}
 
-    for t in trades:
-        price = t.get("price", t.get("tradePrice", 0))
-        size = t.get("size", t.get("tradeVolume", t.get("volume", 0)))
-        try:
-            price = float(price)
-            size = int(size)
-        except:
-            continue
-        if price > 0 and size > 0:
-            price_volume[price] = price_volume.get(price, 0) + size
-
+    price_volume = build_price_volume(trades, df_i)
     trade_total = sum(price_volume.values())
-
-    if trade_total == 0 and df_i is not None and not df_i.empty and "Volume" in df_i.columns:
-        try:
-            trade_total = int(df_i["Volume"].sum())
-        except:
-            trade_total = 0
 
     bid_pct = (bid_total / total_order * 100) if total_order else 0
     ask_pct = (ask_total / total_order * 100) if total_order else 0
 
-    html = f"<div class='card'><div style='display:flex;gap:14px;'><div style='flex:1;text-align:center;'><div style='color:#aaa;'>委託買量</div><div style='font-size:28px;color:#ff3b3b;font-weight:bold;'>{bid_total:,}</div><div style='color:#888;font-size:12px;'>{bid_pct:.1f}%</div></div><div style='flex:1;text-align:center;'><div style='color:#aaa;'>委託賣量</div><div style='font-size:28px;color:#00e676;font-weight:bold;'>{ask_total:,}</div><div style='color:#888;font-size:12px;'>{ask_pct:.1f}%</div></div><div style='flex:1;text-align:center;'><div style='color:#aaa;'>總成交量</div><div style='font-size:28px;color:#ffcc00;font-weight:bold;'>{int(trade_total):,}</div><div style='color:#888;font-size:12px;'>今日累計</div></div></div><div style='margin-top:16px;'><div style='height:14px;background:#1a1a1a;border-radius:4px;display:flex;overflow:hidden;'><div style='width:{bid_pct}%;background:#ff3b3b;'></div><div style='width:{ask_pct}%;background:#00e676;'></div></div><div style='display:flex;justify-content:space-between;color:#aaa;margin-top:6px;font-size:12px;'><span>委買佔比</span><span>委賣佔比</span></div></div></div>"
+    html = f"<div class='card'><div style='display:flex;gap:14px;'><div style='flex:1;text-align:center;'><div style='color:#aaa;'>委託買量</div><div style='font-size:28px;color:#ff3b3b;font-weight:bold;'>{bid_total:,}</div><div style='color:#888;font-size:12px;'>{bid_pct:.1f}%</div></div><div style='flex:1;text-align:center;'><div style='color:#aaa;'>委託賣量</div><div style='font-size:28px;color:#00e676;font-weight:bold;'>{ask_total:,}</div><div style='color:#888;font-size:12px;'>{ask_pct:.1f}%</div></div><div style='flex:1;text-align:center;'><div style='color:#aaa;'>總成交量</div><div style='font-size:28px;color:#ffcc00;font-weight:bold;'>{int(trade_total):,}</div><div style='color:#888;font-size:12px;'>盤後保留</div></div></div><div style='margin-top:16px;'><div style='height:14px;background:#1a1a1a;border-radius:4px;display:flex;overflow:hidden;'><div style='width:{bid_pct}%;background:#ff3b3b;'></div><div style='width:{ask_pct}%;background:#00e676;'></div></div><div style='display:flex;justify-content:space-between;color:#aaa;margin-top:6px;font-size:12px;'><span>委買佔比</span><span>委賣佔比</span></div></div></div>"
     st.markdown(html, unsafe_allow_html=True)
 
     st.markdown("### 📘 委託五檔量")
 
     buy_rows, sell_rows = "", ""
+
     for i in range(5):
         b_price = bids[i].get("price", 0) if i < len(bids) else 0
         b_size = bids[i].get("size", 0) if i < len(bids) else 0
@@ -366,7 +486,7 @@ def render_volume_summary(bids, asks, trades, df_i, prev_c):
     html_order = f"<div class='card' style='margin-top:12px;'><div style='display:flex;gap:18px;'><div style='flex:1;'><h4 style='margin-top:0;color:#ff3b3b;'>買1 ~ 買5</h4><table style='width:100%;border-collapse:collapse;font-family:Consolas,\"Courier New\",monospace;'><thead style='color:#aaa;'><tr><th style='text-align:left;'>檔位</th><th style='text-align:right;'>價格</th><th style='text-align:right;'>量</th></tr></thead><tbody>{buy_rows}</tbody></table></div><div style='flex:1;'><h4 style='margin-top:0;color:#00e676;'>賣1 ~ 賣5</h4><table style='width:100%;border-collapse:collapse;font-family:Consolas,\"Courier New\",monospace;'><thead style='color:#aaa;'><tr><th style='text-align:left;'>檔位</th><th style='text-align:right;'>價格</th><th style='text-align:right;'>量</th></tr></thead><tbody>{sell_rows}</tbody></table></div></div></div>"
     st.markdown(html_order, unsafe_allow_html=True)
 
-    st.markdown("### 📈 今日成交價量分布（低 → 高）")
+    st.markdown("### 📈 今日成交量分布（低→高）")
 
     if not price_volume:
         st.info("📡 尚無逐價成交量資料。")
@@ -379,9 +499,10 @@ def render_volume_summary(bids, asks, trades, df_i, prev_c):
         vol = price_volume[price]
         width = int((vol / max_trade_vol) * 100)
         c = price_color(price, prev_c)
+
         rows += f"<tr><td style='color:{c};font-weight:bold;text-align:right;padding:6px;'>{price:.2f}</td><td style='width:70%;padding:6px;'><div style='height:16px;background:#1a1a1a;border-radius:3px;'><div style='height:16px;width:{width}%;background:#ffcc00;border-radius:3px;'></div></div></td><td style='text-align:right;color:#ddd;padding:6px;'>{vol}</td></tr>"
 
-    html_price_volume = f"<div class='card' style='margin-top:12px;'><table style='width:100%;border-collapse:collapse;font-family:Consolas,\"Courier New\",monospace;'><thead style='color:#aaa;border-bottom:1px solid #333;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div>"
+    html_price_volume = f"<div class='card' style='margin-top:12px;'><table style='width:100%;border-collapse:collapse;font-family:Consolas,\"Courier New\",monospace;'><thead style='color:#aaa;border-bottom:1px solid #333;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>數量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div>"
     st.markdown(html_price_volume, unsafe_allow_html=True)
 
 df, suffix = fetch_history(symbol, period, tf)
@@ -415,31 +536,83 @@ if page == "📊 K線分析":
     df_i_for_summary = fetch_intraday(symbol, suffix)
 
 if page == "📊 K線分析":
-    st.markdown(f"## 📊 {stock_name} ({symbol})")
+    st.markdown(f"## 📊 {stock_name} ({symbol}) K線分析")
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.02)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        row_heights=[0.72, 0.28],
+        vertical_spacing=0.02
+    )
 
     fig.add_trace(go.Candlestick(
-        x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
-        name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676",
-        increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"
+        x=df.index,
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        name="K線",
+        increasing_line_color="#ff3b3b",
+        decreasing_line_color="#00e676",
+        increasing_fillcolor="#ff3b3b",
+        decreasing_fillcolor="#00e676"
     ), row=1, col=1)
+
+    if show_ma5:
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df["Close"].rolling(5).mean(),
+            mode="lines",
+            name="5期均線",
+            line=dict(color="#ffcc00", width=1.6)
+        ), row=1, col=1)
+
+    if show_ma10:
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df["Close"].rolling(10).mean(),
+            mode="lines",
+            name="10期均線",
+            line=dict(color="#00e5ff", width=1.6)
+        ), row=1, col=1)
+
+    if show_ma20:
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df["Close"].rolling(20).mean(),
+            mode="lines",
+            name="20期均線",
+            line=dict(color="#ff66ff", width=1.6)
+        ), row=1, col=1)
 
     if cost > 0:
         fig.add_trace(go.Scatter(
-            x=df.index, y=[cost]*len(df), mode="lines", name="成本線",
+            x=df.index,
+            y=[cost] * len(df),
+            mode="lines",
+            name="成本線",
             line=dict(color="cyan", width=2, dash="dash")
         ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
-        x=df.index, y=[curr]*len(df), mode="lines", name="現價線",
+        x=df.index,
+        y=[curr] * len(df),
+        mode="lines",
+        name="現價線",
         line=dict(color="yellow", width=2, dash="dot")
     ), row=1, col=1)
 
-    vol_colors = ["rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)" for o, c in zip(df["Open"], df["Close"])]
+    vol_colors = [
+        "rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)"
+        for o, c in zip(df["Open"], df["Close"])
+    ]
 
     fig.add_trace(go.Bar(
-        x=df.index, y=df["Volume"], name="成交量", marker_color=vol_colors
+        x=df.index,
+        y=df["Volume"],
+        name="成交量",
+        marker_color=vol_colors
     ), row=2, col=1)
 
     if tf == "1d":
@@ -449,12 +622,18 @@ if page == "📊 K線分析":
         fig.update_xaxes(rangebreaks=[dict(values=dt_breaks)])
 
     fig.update_layout(
-        template="plotly_dark", height=700, xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=20, b=10),
+        template="plotly_dark",
+        height=720,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=30, b=10),
         legend=dict(orientation="h"),
-        hovermode="x unified"
+        hovermode="x unified",
+        paper_bgcolor="#000",
+        plot_bgcolor="#000"
     )
-    fig.update_yaxes(side="right", gridcolor="#222")
+
+    fig.update_yaxes(side="right", gridcolor="#111", zerolinecolor="#111")
+    fig.update_xaxes(gridcolor="#111")
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -474,7 +653,6 @@ elif page == "⚡ 即時趨勢":
 
     if not df_i.empty:
         latest_date = df_i.index.date.max()
-
         now_ts = pd.Timestamp.now(tz="Asia/Taipei").floor("min")
 
         if now_ts.date() == latest_date:
@@ -488,7 +666,13 @@ elif page == "⚡ 即時趨勢":
         else:
             df_plot = df_i.copy()
 
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.02)
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            row_heights=[0.75, 0.25],
+            vertical_spacing=0.02
+        )
 
         fig.add_trace(go.Scatter(
             x=df_plot.index,
@@ -521,17 +705,19 @@ elif page == "⚡ 即時趨勢":
 
         fig.update_layout(
             template="plotly_dark",
-            height=700,
-            margin=dict(l=10, r=10, t=20, b=10),
+            height=720,
+            margin=dict(l=10, r=10, t=30, b=10),
             legend=dict(orientation="h"),
-            hovermode="x unified"
+            hovermode="x unified",
+            paper_bgcolor="#000",
+            plot_bgcolor="#000"
         )
 
-        fig.update_yaxes(side="right", gridcolor="#222")
+        fig.update_yaxes(side="right", gridcolor="#111", zerolinecolor="#111")
+        fig.update_xaxes(gridcolor="#111")
 
         st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("📌 盤中顯示即時資料；盤後保留最後一個交易日 09:00～13:30 走勢。分鐘量：紅色代表該分鐘收高，綠色代表該分鐘收低。")
+        st.caption("📌 盤中顯示即時資料；盤後保留最後交易日 09:00～13:30。分鐘量：紅色代表該分鐘收高，綠色代表該分鐘收低。")
 
     else:
         st.warning("⚠️ 無盤中資料，可能資料源延遲或該股票無分鐘資料。")
@@ -578,10 +764,15 @@ elif page == "📰 AI新聞預測":
             latest_vol = df["Volume"].iloc[-1]
 
             trend_score = 50
-            if curr > ma5: trend_score += 15
-            if curr > ma20: trend_score += 20
-            if curr > recent_high: trend_score += 25
-            if curr < ma20: trend_score -= 25
+            if curr > ma5:
+                trend_score += 15
+            if curr > ma20:
+                trend_score += 20
+            if curr > recent_high:
+                trend_score += 25
+            if curr < ma20:
+                trend_score -= 25
+
             trend_score = max(0, min(100, trend_score))
 
             volume_score = 50
