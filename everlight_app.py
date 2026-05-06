@@ -47,7 +47,6 @@ def load_market_dict():
     market_dict = {}
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    # 官方 OpenAPI 快速抓取
     try:
         r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL", headers=headers, timeout=5)
         if r.status_code == 200:
@@ -67,7 +66,6 @@ def load_market_dict():
                     market_dict[name] = code
     except: pass
 
-    # ISIN 暴力解析備援 (上市)
     try:
         url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
         tables = pd.read_html(url)
@@ -84,7 +82,6 @@ def load_market_dict():
             except: pass
     except: pass
 
-    # ISIN 暴力解析備援 (上櫃)
     try:
         url_otc = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
         tables_otc = pd.read_html(url_otc)
@@ -101,7 +98,6 @@ def load_market_dict():
             except: pass
     except: pass
 
-    # ETF 補充清單
     etf_extra = {
         "0050":"元大台灣50", "0056":"元大高股息", "006208":"富邦台50",
         "00878":"國泰永續高股息", "00919":"群益台灣精選高息",
@@ -131,7 +127,6 @@ with c2:
     symbol = stock_input
     stock_name = stock_input
 
-    # ===== 精準優先 / 模糊搜尋 =====
     if stock_input in MASTER_DICT:
         if stock_input.isdigit() or stock_input.endswith("B"):
             symbol = stock_input
@@ -142,7 +137,6 @@ with c2:
     else:
         exact_match = None
         fuzzy_match = None
-        
         for k, v in MASTER_DICT.items():
             if isinstance(v, str):
                 if stock_input == v:
@@ -150,7 +144,6 @@ with c2:
                     break 
                 elif stock_input in v and not fuzzy_match:
                     fuzzy_match = (k, v) 
-        
         if exact_match:
             symbol, stock_name = exact_match
         elif fuzzy_match:
@@ -190,7 +183,6 @@ with c4:
         has_secret = False
 
     if api_key and api_key != get_token() and not has_secret:
-        # Streamlit Cloud 檔案寫入可能無法跨重啟保留，但防呆機制已完善
         try:
             with open(TOKEN_FILE, "w") as f:
                 f.write(api_key)
@@ -234,7 +226,6 @@ def fetch_history(symbol, period, interval):
 
 @st.cache_data(ttl=10)
 def fetch_intraday(symbol, suffix):
-    # 🔥 盤後防呆：改為抓取 5d 再過濾最新一天，確保換日或休市時圖表仍有資料
     df_i = yf.download(f"{symbol}{suffix}", period="5d", interval="1m", progress=False, threads=False, auto_adjust=False)
     df_i = flatten_columns(df_i)
 
@@ -245,7 +236,6 @@ def fetch_intraday(symbol, suffix):
         else:
             df_i.index = df_i.index.tz_convert("Asia/Taipei")
         
-        # 濾出最後一個交易日
         latest_day = df_i.index.date.max()
         df_i = df_i[df_i.index.date == latest_day]
 
@@ -316,9 +306,9 @@ def donut_chart(title, value, label, color):
     ])
     fig.update_layout(
         template="plotly_dark", height=260, margin=dict(l=5, r=5, t=40, b=5),
+        paper_bgcolor="#000", plot_bgcolor="#000",
         title=dict(text=title, x=0.5, font=dict(size=20)),
-        annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))],
-        paper_bgcolor="#111", plot_bgcolor="#111"
+        annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))]
     )
     return fig
 
@@ -372,7 +362,7 @@ def render_trade_details(trades, prev_c):
 
         rows.append(f"<tr><td style='color:#aaa; border-bottom:1px solid #222; padding:6px;'>{time_text}</td><td style='color:{c}; font-weight:bold; text-align:right; border-bottom:1px solid #222; padding:6px;'>{price_f:.2f}</td><td style='color:#ddd; text-align:right; border-bottom:1px solid #222; padding:6px;'>{size}</td></tr>")
 
-    html = f"<div class='card'><div style='max-height:320px; overflow-y:auto; padding-right:5px;'><table style='width:100%; border-collapse:collapse; font-family:Consolas,\"Courier New\",monospace; font-size:16px;'><thead style='position:sticky; top:0; background:#111; z-index:2;'><tr style='color:#aaa; border-bottom:1px solid #444;'><th style='text-align:left; padding:8px 6px;'>時間</th><th style='text-align:right; padding:8px 6px;'>成交價</th><th style='text-align:right; padding:8px 6px;'>成交量</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div>"
+    html = f"<div class='card' style='padding:0;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table style='width:100%; border-collapse:collapse; font-family:Consolas,\"Courier New\",monospace; font-size:16px;'><thead style='position:sticky; top:-15px; background:#111; z-index:2;'><tr style='color:#aaa;'><th style='text-align:left; padding:8px 6px; background:#111; border-bottom:1px solid #444;'>時間</th><th style='text-align:right; padding:8px 6px; background:#111; border-bottom:1px solid #444;'>成交價</th><th style='text-align:right; padding:8px 6px; background:#111; border-bottom:1px solid #444;'>成交量</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div>"
     st.markdown(html, unsafe_allow_html=True)
 
 def render_volume_summary(bids, asks, trades, df_i, prev_c):
@@ -421,7 +411,8 @@ def render_volume_summary(bids, asks, trades, df_i, prev_c):
         c = price_color(price, prev_c)
         rows += f"<tr><td style='color:{c}; font-weight:bold; text-align:right; padding:6px;'>{price:.2f}</td><td style='width:70%; padding:6px;'><div style='height:16px; background:#1a1a1a; border-radius:3px;'><div style='height:16px; width:{width}%; background:#ffcc00; border-radius:3px;'></div></div></td><td style='text-align:right; color:#ddd; padding:6px;'>{vol}</td></tr>"
 
-    html_price_volume = f"<div class='card' style='margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding-right:5px;'><table style='width:100%; border-collapse:collapse; font-family:Consolas,\"Courier New\",monospace;'><thead style='position:sticky; top:0; background:#111; z-index:2; color:#aaa; border-bottom:1px solid #333;'><tr><th style='text-align:right; padding-bottom:8px;'>價格</th><th style='text-align:center; padding-bottom:8px;'>量條</th><th style='text-align:right; padding-bottom:8px;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>"
+    # 🔥 修復：加上 max-height 和 overflow-y，並強制凍結背景色以防破圖
+    html_price_volume = f"<div class='card' style='padding:0; margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table style='width:100%; border-collapse:collapse; font-family:Consolas,\"Courier New\",monospace;'><thead style='position:sticky; top:-15px; background:#111; z-index:2; color:#aaa;'><tr style='border-bottom:1px solid #333;'><th style='text-align:right; padding-bottom:8px; background:#111;'>價格</th><th style='text-align:center; padding-bottom:8px; background:#111;'>量條</th><th style='text-align:right; padding-bottom:8px; background:#111;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>"
     st.markdown(html_price_volume, unsafe_allow_html=True)
 
 # =====================
@@ -445,7 +436,6 @@ if trade_price not in [None, 0] and not pd.isna(trade_price):
 else:
     curr = curr_yf
 
-# 🔥 防禦 None 回傳地雷
 bids = q.get("bids") or []
 asks = q.get("asks") or []
 trades = fetch_fugle_trades(symbol, api_key) or []
@@ -484,7 +474,13 @@ if page == "📊 K線分析":
         dt_breaks = [d for d in dt_all if d not in dt_obs]
         fig.update_xaxes(rangebreaks=[dict(values=dt_breaks)])
 
-    fig.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h"), hovermode="x unified")
+    # 🔥 物理級鎖死 Plotly 黑色背景
+    fig.update_layout(
+        template="plotly_dark", height=700, xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h"), hovermode="x unified",
+        paper_bgcolor="#000", plot_bgcolor="#000"
+    )
+    fig.update_xaxes(gridcolor="#222")
     fig.update_yaxes(side="right", gridcolor="#222")
 
     st.plotly_chart(fig, use_container_width=True)
@@ -520,7 +516,15 @@ elif page == "⚡ 即時趨勢":
         t_start = pd.Timestamp(f"{today} 09:00", tz="Asia/Taipei")
         t_end = pd.Timestamp(f"{today} 13:30", tz="Asia/Taipei")
         fig.update_xaxes(range=[t_start, t_end], tickformat="%H:%M")
-        fig.update_layout(template="plotly_dark", height=700, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h"), hovermode="x unified")
+        
+        # 🔥 物理級鎖死 Plotly 黑色背景
+        fig.update_layout(
+            template="plotly_dark", height=700, margin=dict(l=10, r=10, t=20, b=10),
+            legend=dict(orientation="h"), hovermode="x unified",
+            paper_bgcolor="#000", plot_bgcolor="#000"
+        )
+        fig.update_xaxes(gridcolor="#222")
+        fig.update_yaxes(side="right", gridcolor="#222")
 
         st.plotly_chart(fig, use_container_width=True)
     else:
