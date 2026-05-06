@@ -160,7 +160,7 @@ INDUSTRY_BACKUP = {
 c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
 
 with c1:
-    page = st.radio("📌 頁面切換", ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析"], horizontal=True)
+    page = st.radio("📌 頁面切換", ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析"], horizontal=True)
 
 with c2:
     stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
@@ -194,9 +194,12 @@ with c3:
     tf, period = {"日K":"1d", "週K":"1wk", "月K":"1mo"}[tf_label], {"日K":"6mo", "週K":"2y", "月K":"5y"}[tf_label]
     time_unit = {"日K":"日線", "週K":"週線", "月K":"月線"}[tf_label]
     ma1, ma2, ma3 = st.columns(3)
-    with ma1: show_ma5 = st.checkbox("5線", True)
-    with ma2: show_ma10 = st.checkbox("10線", True)
-    with ma3: show_ma20 = st.checkbox("20線", True)
+    with ma1:
+        show_ma5 = st.checkbox("5線", True)
+    with ma2:
+        show_ma10 = st.checkbox("10線", True)
+    with ma3:
+        show_ma20 = st.checkbox("20線", True)
 
 with c4:
     api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
@@ -208,8 +211,10 @@ with c4:
             pass
 
 p1, p2 = st.columns(2)
-with p1: qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
-with p2: cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
+with p1:
+    qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
+with p2:
+    cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
 
 # 關閉自動刷新，避免 Streamlit 前端 removeChild 錯誤
 if st.button("🔄 手動刷新"):
@@ -268,6 +273,7 @@ def fetch_monthly_revenue(symbol, finmind_token):
 
     try:
         headers = {"Authorization": f"Bearer {finmind_token}"}
+        # 為了計算 YoY，至少需要 24 個月資料
         start_date = (datetime.now() - timedelta(days=800)).strftime("%Y-%m-%d")
 
         params = {
@@ -316,37 +322,262 @@ def fetch_monthly_revenue(symbol, finmind_token):
 
     return res_df
 
-def fetch_fugle_quote(symbol, api_key):
-    if not api_key: return {}
+
+@st.cache_data(ttl=3600)
+def fetch_institutional_chips(symbol, finmind_token):
+    res_df = pd.DataFrame()
+
+    if not finmind_token:
+        return res_df
+
     try:
-        r = requests.get(f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}", headers={"X-API-KEY": api_key}, timeout=3)
-        if r.status_code == 200: return r.json()
-    except Exception: pass
+        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        url = "https://api.finmindtrade.com/api/v4/data"
+
+        params = {
+            "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
+            "data_id": str(symbol),
+            "start_date": start_date,
+            "token": finmind_token,
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+
+        if r.status_code != 200:
+            print(f"三大法人 API 異常! 狀態碼: {r.status_code}, 回傳內容: {r.text}")
+            return res_df
+
+        json_data = r.json()
+        data = json_data.get("data", [])
+
+        if not data:
+            print(f"三大法人 API 回傳無資料! JSON: {json_data}")
+            return res_df
+
+        df = pd.DataFrame(data)
+
+        print("三大法人原始欄位:", df.columns.tolist())
+        if "name" in df.columns:
+            print("FinMind 法人名稱清單:", df["name"].unique().tolist())
+
+        if "date" not in df.columns:
+            print(f"三大法人找不到 date 欄位，目前欄位: {df.columns.tolist()}")
+            return res_df
+
+        if "name" not in df.columns:
+            print(f"三大法人找不到 name 欄位，目前欄位: {df.columns.tolist()}")
+            return res_df
+
+        if "buy_sell" in df.columns:
+            df["net"] = pd.to_numeric(df["buy_sell"], errors="coerce")
+        elif "buy" in df.columns and "sell" in df.columns:
+            df["net"] = (
+                pd.to_numeric(df["buy"], errors="coerce")
+                - pd.to_numeric(df["sell"], errors="coerce")
+            )
+        elif "buy_volume" in df.columns and "sell_volume" in df.columns:
+            df["net"] = (
+                pd.to_numeric(df["buy_volume"], errors="coerce")
+                - pd.to_numeric(df["sell_volume"], errors="coerce")
+            )
+        else:
+            print(f"三大法人找不到買賣超欄位，目前欄位: {df.columns.tolist()}")
+            return res_df
+
+        df["net"] = df["net"].fillna(0)
+
+        if not df.empty and df["net"].abs().max() > 500000:
+            df["net"] = df["net"] / 1000
+
+        def classify_name(n):
+            n_str = str(n).strip()
+            n_low = n_str.lower()
+
+            if (
+                "外資" in n_str
+                or "外陸資" in n_str
+                or "foreign" in n_low
+                or "foreign_investor" in n_low
+                or "foreign investor" in n_low
+            ):
+                return "外資"
+
+            if (
+                "投信" in n_str
+                or "investment_trust" in n_low
+                or "investment trust" in n_low
+                or "trust" in n_low
+            ):
+                return "投信"
+
+            if (
+                "自營商" in n_str
+                or "dealer" in n_low
+                or "dealer_self" in n_low
+                or "dealer_hedging" in n_low
+            ):
+                return "自營商"
+
+            return "其他"
+
+        df["type"] = df["name"].apply(classify_name)
+
+        print("分類結果:", df[["name", "type"]].drop_duplicates().to_dict("records"))
+
+        df = df[df["type"] != "其他"]
+
+        if df.empty:
+            print("三大法人資料有回傳，但分類後沒有外資 / 投信 / 自營商資料")
+            return res_df
+
+        pivot_df = (
+            df.groupby(["date", "type"])["net"]
+            .sum()
+            .unstack(fill_value=0)
+            .reset_index()
+        )
+
+        for col in ["外資", "投信", "自營商"]:
+            if col not in pivot_df.columns:
+                pivot_df[col] = 0
+
+        pivot_df["合計"] = pivot_df["外資"] + pivot_df["投信"] + pivot_df["自營商"]
+
+        res_df = (
+            pivot_df[["date", "外資", "投信", "自營商", "合計"]]
+            .sort_values("date", ascending=True)
+            .tail(20)
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+        print("三大法人處理發生錯誤:", e)
+
+    return res_df
+
+@st.cache_data(ttl=3600)
+def fetch_margin_chips(symbol, finmind_token):
+    res_df = pd.DataFrame()
+
+    if not finmind_token:
+        return res_df
+
+    try:
+        start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        url = "https://api.finmindtrade.com/api/v4/data"
+
+        params = {
+            "dataset": "TaiwanStockMarginPurchaseShortSale",
+            "data_id": str(symbol),
+            "start_date": start_date,
+            "token": finmind_token,
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+
+        if r.status_code != 200:
+            print(f"融資融券 API 異常! 狀態碼: {r.status_code}, 回傳內容: {r.text}")
+            return res_df
+
+        json_data = r.json()
+        data = json_data.get("data", [])
+
+        if not data:
+            print(f"融資融券 API 回傳無資料! JSON: {json_data}")
+            return res_df
+
+        df = pd.DataFrame(data)
+
+        if "date" not in df.columns:
+            print(f"融資融券找不到 date 欄位，目前欄位: {df.columns.tolist()}")
+            return res_df
+
+        df = df.sort_values("date", ascending=True)
+
+        if "MarginPurchaseTodayBalance" not in df.columns or "ShortSaleTodayBalance" not in df.columns:
+            print(f"融資融券找不到目標欄位，目前欄位: {df.columns.tolist()}")
+            return res_df
+
+        df["融資餘額"] = pd.to_numeric(
+            df["MarginPurchaseTodayBalance"],
+            errors="coerce"
+        ).fillna(0)
+
+        df["融券餘額"] = pd.to_numeric(
+            df["ShortSaleTodayBalance"],
+            errors="coerce"
+        ).fillna(0)
+
+        df["融資增減"] = df["融資餘額"].diff().fillna(0)
+        df["融券增減"] = df["融券餘額"].diff().fillna(0)
+
+        res_df = (
+            df[["date", "融資餘額", "融券餘額", "融資增減", "融券增減"]]
+            .tail(20)
+            .reset_index(drop=True)
+        )
+
+    except Exception as e:
+        print("融資融券處理發生錯誤:", e)
+
+    return res_df
+
+def fetch_fugle_quote(symbol, api_key):
+    if not api_key:
+        return {}
+
+    try:
+        r = requests.get(
+            f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}",
+            headers={"X-API-KEY": api_key},
+            timeout=3
+        )
+
+        if r.status_code == 200:
+            return r.json()
+
+    except Exception:
+        pass
+
     return {}
 
+
 def fetch_fugle_trades(symbol, api_key):
-    if not api_key: return []
+    if not api_key:
+        return []
+
     try:
-        r = requests.get(f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/trades/{symbol}", headers={"X-API-KEY": api_key}, timeout=3)
+        r = requests.get(
+            f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/trades/{symbol}",
+            headers={"X-API-KEY": api_key},
+            timeout=3
+        )
+
         if r.status_code == 200:
             d = r.json()
             return d if isinstance(d, list) else d.get("data", d.get("trades", []))
-    except Exception: pass
+
+    except Exception:
+        pass
+
     return []
 
-# =====================
-# 共用函式
-# =====================
+
 def price_color(price, prev_c):
-    if price == 0 or prev_c == 0: return "#fff"
+    if price == 0 or prev_c == 0:
+        return "#fff"
     return "#ff3b3b" if price > prev_c else "#00e676" if price < prev_c else "#fff"
+
 
 def format_trade_time(raw_time):
     try:
         r = str(raw_time).strip()
-        if r.isdigit(): return datetime.fromtimestamp(float(r) / (10 ** (len(r) - 10)) if len(r) > 10 else float(r), tz=timezone(timedelta(hours=8))).strftime("%H:%M:%S")
+        if r.isdigit():
+            return datetime.fromtimestamp(float(r) / (10 ** (len(r) - 10)) if len(r) > 10 else float(r), tz=timezone(timedelta(hours=8))).strftime("%H:%M:%S")
         return r.split("T")[-1].split(".")[0] if "T" in r else r.split(".")[0]
-    except Exception: return str(raw_time)[:8]
+    except Exception:
+        return str(raw_time)[:8]
+
 
 def donut_chart(title, value, label, color):
     value = max(0, min(100, int(value)))
@@ -354,39 +585,41 @@ def donut_chart(title, value, label, color):
     fig.update_layout(template="plotly_dark", height=260, margin=dict(l=5, r=5, t=40, b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", title=dict(text=title, x=0.5, font=dict(size=20, color="#fff")), annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))])
     return fig
 
-# =====================
-# 渲染模組
-# =====================
 def render_order_book(bids, asks, prev_c, curr):
     if not bids and not asks:
-        st.info("📡 五檔尚未連線或非盤中時間"); return
-    all_vols = [x.get("size", 0) for x in bids + asks]; max_v = max(all_vols) if all_vols else 1
+        st.info("📡 五檔尚未連線或非盤中時間")
+        return
+    all_vols = [x.get("size", 0) for x in bids + asks]
+    max_v = max(all_vols) if all_vols else 1
     buy5, sell5 = bids[:5], asks[:5]
     rows = ""
     for i in range(5):
-        bp = buy5[i].get("price", 0) if i < len(buy5) else 0
-        bs = buy5[i].get("size", 0) if i < len(buy5) else 0
-        ap = sell5[i].get("price", 0) if i < len(sell5) else 0
-        as_ = sell5[i].get("size", 0) if i < len(sell5) else 0
-        bw = int((bs / max_v) * 100) if max_v else 0
-        aw = int((as_ / max_v) * 100) if max_v else 0
-        bc = price_color(bp, prev_c) if bp > 0 else "#777"
-        ac = price_color(ap, prev_c) if ap > 0 else "#777"
+        bp, bs = buy5[i].get("price", 0) if i < len(buy5) else 0, buy5[i].get("size", 0) if i < len(buy5) else 0
+        ap, as_ = sell5[i].get("price", 0) if i < len(sell5) else 0, sell5[i].get("size", 0) if i < len(sell5) else 0
+        bw, aw = int((bs / max_v) * 100) if max_v else 0, int((as_ / max_v) * 100) if max_v else 0
+        bc, ac = price_color(bp, prev_c) if bp > 0 else "#777", price_color(ap, prev_c) if ap > 0 else "#777"
         rows += f"<tr><td style='width:55px; text-align:right; color:#aaa;'>{bs if bs>0 else ''}</td><td style='width:170px;'><div class='bar-bg'><div class='buy-bar' style='width:{bw}%;'></div></div></td><td class='order-price' style='width:85px; text-align:right; color:{bc};'>{f'{bp:.2f}' if bp>0 else '--'}</td><td style='width:55px; text-align:center; color:#555;'>│</td><td class='order-price' style='width:85px; text-align:left; color:{ac};'>{f'{ap:.2f}' if ap>0 else '--'}</td><td style='width:170px;'><div class='bar-bg'><div class='sell-bar' style='width:{aw}%;'></div></div></td><td style='width:55px; text-align:left; color:#aaa;'>{as_ if as_>0 else ''}</td></tr>"
     st.markdown(f"<div style='background:#050505; padding:12px; border-radius:10px; border:1px solid #222;'><div style='text-align:center; color:#ffcc00; font-size:20px; font-weight:bold; margin-bottom:8px;'>現價 {curr:.2f}</div><table class='order-table'><thead><tr><th>買量</th><th></th><th>買價</th><th></th><th>賣價</th><th></th><th>賣量</th></tr></thead><tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
+
 
 def render_trade_details(trades, prev_c):
     st.markdown("### 📜 成交明細")
     if not trades:
-        st.info("📡 尚無成交明細資料。"); return
+        st.info("📡 尚無成交明細資料。")
+        return
     rows = ""
     for t in trades[:60]:
-        try: p = float(t.get("price", t.get("tradePrice", 0)) or 0)
-        except Exception: p = 0
-        try: s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
-        except Exception: s = 0
+        try:
+            p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+        except Exception:
+            p = 0
+        try:
+            s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+        except Exception:
+            s = 0
         rows += f"<tr><td>{format_trade_time(t.get('time', t.get('at', t.get('date', ''))))}</td><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='text-align:right;'>{s}</td></tr>"
-    st.markdown(f"<div class='card' style='padding:0;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2; background:#111;'><tr><th>時間</th><th style='text-align:right;'>成交價</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='card' style='padding:0;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2;'><tr><th>時間</th><th style='text-align:right;'>成交價</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
+
 
 def render_volume_summary(bids, asks, trades, df_i, prev_c):
     st.markdown("### 📊 委託 / 成交量統計")
@@ -394,24 +627,25 @@ def render_volume_summary(bids, asks, trades, df_i, prev_c):
     price_vol = {}
     for t in trades:
         try:
-            p = float(t.get("price", t.get("tradePrice", 0)) or 0)
-            s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
-            if p > 0 and s > 0: price_vol[p] = price_vol.get(p, 0) + s
-        except Exception: continue
+            p, s = float(t.get("price", t.get("tradePrice", 0)) or 0), int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+            if p > 0 and s > 0:
+                price_vol[p] = price_vol.get(p, 0) + s
+        except Exception:
+            continue
     trade_total = sum(price_vol.values()) or (int(df_i["Volume"].sum()) if not df_i.empty and "Volume" in df_i.columns else 0)
     bid_pct = (bid_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
     ask_pct = (ask_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
+
     st.markdown(f"<div class='card'><div style='display:flex; gap:14px;'><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託買量</div><div style='font-size:28px; color:#ff3b3b; font-weight:bold;'>{bid_total:,}</div><div style='color:#888; font-size:12px;'>{bid_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託賣量</div><div style='font-size:28px; color:#00e676; font-weight:bold;'>{ask_total:,}</div><div style='color:#888; font-size:12px;'>{ask_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>總成交量</div><div style='font-size:28px; color:#ffcc00; font-weight:bold;'>{int(trade_total):,}</div><div style='color:#888; font-size:12px;'>今日累計</div></div></div><div style='margin-top:16px;'><div style='height:14px; background:#1a1a1a; border-radius:4px; display:flex; overflow:hidden;'><div style='width:{bid_pct}%; background:#ff3b3b;'></div><div style='width:{ask_pct}%; background:#00e676;'></div></div><div style='display:flex; justify-content:space-between; color:#aaa; margin-top:6px; font-size:12px;'><span>委買佔比</span><span>委賣佔比</span></div></div></div>", unsafe_allow_html=True)
-    
+
     st.markdown("### 📈 今日成交價量分布（低 → 高）")
     if not price_vol:
-        st.info("📡 尚無逐價成交量資料。"); return
-    max_v = max(price_vol.values()) if price_vol else 1
-    rows = ""
+        st.info("📡 尚無逐價成交量資料。")
+        return
+    max_v, rows = max(price_vol.values()), ""
     for p in sorted(price_vol.keys()):
-        w = int((price_vol[p] / max_v) * 100)
-        rows += f"<tr><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='width:70%;'><div style='height:16px; background:#1a1a1a; border-radius:3px;'><div style='height:16px; width:{w}%; background:#ffcc00; border-radius:3px;'></div></div></td><td style='text-align:right;'>{price_vol[p]}</td></tr>"
-    st.markdown(f"<div class='card' style='padding:0; margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2; background:#111;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
+        rows += f"<tr><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='width:70%;'><div style='height:16px; background:#1a1a1a; border-radius:3px;'><div style='height:16px; width:{int((price_vol[p]/max_v)*100)}%; background:#ffcc00; border-radius:3px;'></div></div></td><td style='text-align:right;'>{price_vol[p]}</td></tr>"
+    st.markdown(f"<div class='card' style='padding:0; margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
 
 # =====================
 # 主資料處理
@@ -432,8 +666,7 @@ curr = float(trade_price) if trade_price not in [None, 0] and not pd.isna(trade_
 bids, asks = q.get("bids") or [], q.get("asks") or []
 trades = fetch_fugle_trades(symbol, api_key) or []
 profit = (curr - cost) * qty * 1000
-diff = curr - prev_c
-pct = (diff / prev_c * 100) if prev_c else 0
+diff, pct = curr - prev_c, ((curr - prev_c) / prev_c * 100) if prev_c else 0
 df_i_for_summary = fetch_intraday(symbol, suffix)
 
 # =====================
@@ -443,21 +676,29 @@ if page == "📊 K線分析":
     st.markdown(f"## 📊 {display_name}")
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.02)
     fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
-    if cost > 0: fig.add_trace(go.Scatter(x=df.index, y=[cost] * len(df), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
+    if cost > 0:
+        fig.add_trace(go.Scatter(x=df.index, y=[cost] * len(df), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=[curr] * len(df), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
-    if show_ma5: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(5).mean(), mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
-    if show_ma10: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(10).mean(), mode="lines", line=dict(color="#00E5FF", width=1.5), name="MA10"), row=1, col=1)
-    if show_ma20: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(20).mean(), mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
+    if show_ma5:
+        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(5).mean(), mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
+    if show_ma10:
+        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(10).mean(), mode="lines", line=dict(color="#00E5FF", width=1.5), name="MA10"), row=1, col=1)
+    if show_ma20:
+        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(20).mean(), mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
     fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="成交量", marker_color=["rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)" for o, c in zip(df["Open"], df["Close"])]), row=2, col=1)
-    if tf == "1d": fig.update_xaxes(rangebreaks=[dict(values=[d for d in pd.date_range(start=df.index[0], end=df.index[-1]).strftime("%Y-%m-%d").tolist() if d not in df.index.strftime("%Y-%m-%d").tolist()])])
+    if tf == "1d":
+        fig.update_xaxes(rangebreaks=[dict(values=[d for d in pd.date_range(start=df.index[0], end=df.index[-1]).strftime("%Y-%m-%d").tolist() if d not in df.index.strftime("%Y-%m-%d").tolist()])])
     fig.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h"), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000")
-    fig.update_xaxes(gridcolor="#111"); fig.update_yaxes(side="right", gridcolor="#111")
+    fig.update_xaxes(gridcolor="#111")
+    fig.update_yaxes(side="right", gridcolor="#111")
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
     dc, vc = st.columns([5, 4])
-    with dc: render_trade_details(trades, prev_c)
-    with vc: render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
+    with dc:
+        render_trade_details(trades, prev_c)
+    with vc:
+        render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
 
 # =====================
 # ⚡ 即時趨勢
@@ -467,24 +708,27 @@ elif page == "⚡ 即時趨勢":
     if not df_i_for_summary.empty:
         df_i = df_i_for_summary.copy()
         now_ts = pd.Timestamp.now(tz="Asia/Taipei").floor("min")
-        if "High" not in df_i.columns: df_i["High"] = df_i["Close"]
-        if "Low" not in df_i.columns: df_i["Low"] = df_i["Close"]
+        if "High" not in df_i.columns:
+            df_i["High"] = df_i["Close"]
+        if "Low" not in df_i.columns:
+            df_i["Low"] = df_i["Close"]
         df_plot = pd.concat([df_i, pd.DataFrame([[df_i["Open"].iloc[-1] if not df_i.empty else curr, curr, curr, curr, 0]], columns=["Open", "High", "Low", "Close", "Volume"], index=[now_ts])]).sort_index()
         df_plot = df_plot[~df_plot.index.duplicated(keep="last")]
         df_plot["VWAP"] = (df_plot["Close"] * df_plot["Volume"]).cumsum() / df_plot["Volume"].cumsum().replace(0, pd.NA)
         df_plot["VWAP"] = df_plot["VWAP"].bfill().fillna(df_plot["Close"])
 
-        high_val = max(df_plot["High"].max(), curr)
-        low_val = min(df_plot["Low"].min(), curr)
+        high_val, low_val = max(df_plot["High"].max(), curr), min(df_plot["Low"].min(), curr)
         amp_pct = ((high_val - low_val) / low_val) * 100 if low_val > 0 else 0
 
         buy_vol, sell_vol, v_colors, p_c = 0, 0, [], prev_c
         for _, r in df_plot.iterrows():
             c, v = r["Close"], r["Volume"] if not pd.isna(r["Volume"]) else 0
             if c >= p_c:
-                buy_vol += v; v_colors.append("rgba(255,59,59,0.8)")
+                buy_vol += v
+                v_colors.append("rgba(255,59,59,0.8)")
             else:
-                sell_vol += v; v_colors.append("rgba(0,230,118,0.8)")
+                sell_vol += v
+                v_colors.append("rgba(0,230,118,0.8)")
             p_c = c
         buy_pct = (buy_vol / (buy_vol + sell_vol) * 100) if (buy_vol + sell_vol) else 50
         sell_pct = 100 - buy_pct
@@ -497,9 +741,7 @@ elif page == "⚡ 即時趨勢":
         m2.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>最高 / 最低</div><div style='color:#fff; font-size:22px; font-weight:bold;'><span style='color:#ff3b3b'>{high_val:.2f}</span> <span style='color:#666;'>/</span> <span style='color:#00e676'>{low_val:.2f}</span></div></div>", unsafe_allow_html=True)
         m3.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>今日振幅</div><div style='color:#ffcc00; font-size:22px; font-weight:bold;'>{amp_pct:.2f}%</div></div>", unsafe_allow_html=True)
         m4.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>即時均價 (VWAP)</div><div style='color:#fff; font-size:22px; font-weight:bold;'>{df_plot['VWAP'].iloc[-1]:.2f}</div></div>", unsafe_allow_html=True)
-        
         st.markdown(f"<div class='card' style='margin-top:10px; margin-bottom:15px;'><div style='display:flex; justify-content:space-between; margin-bottom:5px; font-size:15px;'><span style='color:#ff3b3b; font-weight:bold;'>🔥 主動買盤 {buy_pct:.1f}%</span><span style='color:#00e676; font-weight:bold;'>❄️ 主動賣盤 {sell_pct:.1f}%</span></div><div style='height:12px; background:#1a1a1a; border-radius:6px; display:flex; overflow:hidden;'><div style='width:{buy_pct}%; background:#ff3b3b;'></div><div style='width:{sell_pct}%; background:#00e676;'></div></div></div>", unsafe_allow_html=True)
-        
         if surges:
             st.markdown(f"<div style='margin-bottom:15px;'>{''.join([f'<span style=\"background:#332b00; border:1px solid #665500; color:#ffcc00; padding:4px 10px; border-radius:5px; margin-right:10px; font-size:14px; font-weight:bold;\">{s}</span>' for s in surges])}</div>", unsafe_allow_html=True)
 
@@ -523,24 +765,26 @@ elif page == "⚡ 即時趨勢":
 # =====================
 elif page == "🤖 AI綜合預測":
     st.markdown(f"## 🤖 {display_name} AI 綜合預測中心")
-    ts, ids, cs, fs = 50, 50, 50, 50
-    buy_pct, sell_pct = 0.5, 0.5
-    
+    ts, ids, cs, fs, buy_pct, sell_pct = 0, 0, 0, 0, 0.5, 0.5
     try:
         if len(df) >= 20:
-            ma5 = df["Close"].rolling(5).mean().iloc[-1]
-            ma20 = df["Close"].rolling(20).mean().iloc[-1]
-            h20 = df["High"].rolling(20).max().iloc[-1]
-            vma20 = df["Volume"].rolling(20).mean().iloc[-1]
-            vc = df["Volume"].iloc[-1]
-            ts = 0
-            if curr > ma5: ts += 10
-            if curr > ma20: ts += 20
-            if curr >= h20 * 0.99: ts += 25
-            if vc > vma20: ts += 20
-            if curr >= open_p: ts += 10
-            if curr > prev_c and vc > df["Volume"].iloc[-2]: ts += 15
-    except Exception: pass
+            ma5, ma20, h20, vma20, vc = df["Close"].rolling(5).mean().iloc[-1], df["Close"].rolling(20).mean().iloc[-1], df["High"].rolling(20).max().iloc[-1], df["Volume"].rolling(20).mean().iloc[-1], df["Volume"].iloc[-1]
+            if curr > ma5:
+                ts += 10
+            if curr > ma20:
+                ts += 20
+            if curr >= h20 * 0.99:
+                ts += 25
+            if vc > vma20:
+                ts += 20
+            if curr >= open_p:
+                ts += 10
+            if curr > prev_c and vc > df["Volume"].iloc[-2]:
+                ts += 15
+        else:
+            ts = 50
+    except Exception:
+        ts = 50
     ts = max(0, min(100, ts))
 
     try:
@@ -551,51 +795,66 @@ elif page == "🤖 AI綜合預測":
             amp = (hd - ld) / ld if ld > 0 else 0
             bv, pc = 0, prev_c
             for _, r in df_i.iterrows():
-                if r["Close"] >= pc: bv += r["Volume"]
+                if r["Close"] >= pc:
+                    bv += r["Volume"]
                 pc = r["Close"]
             tv = df_i["Volume"].sum()
             if tv > 0:
                 buy_pct = bv / tv
                 sell_pct = 1 - buy_pct
-            
-            ids = 0
-            if curr > vwap: ids += 20
-            if buy_pct > 0.6: ids += 25
-            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2: ids += 20
-            if hd > 0 and (hd - curr) / hd < 0.01: ids += 15
-            if amp > 0.03: ids += 10
-    except Exception: pass
+            if curr > vwap:
+                ids += 20
+            if buy_pct > 0.6:
+                ids += 25
+            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2:
+                ids += 20
+            if hd > 0 and (hd - curr) / hd < 0.01:
+                ids += 15
+            if amp > 0.03:
+                ids += 10
+        else:
+            ids = 50
+    except Exception:
+        ids = 50
     ids = max(0, min(100, ids))
 
     try:
         if bids and asks:
-            bv = sum(x.get("size", 0) for x in bids)
-            av = sum(x.get("size", 0) for x in asks)
+            bv, av = sum(x.get("size", 0) for x in bids), sum(x.get("size", 0) for x in asks)
             tba = bv + av
-            cs = 0
-            if bv > av: cs += 20
-            if tba > 0 and (bv - av) / tba > 0.2: cs += 20
-            if bids and bids[0].get("size", 0) > 100: cs += 20
-            if bv > av * 1.5: cs += 20
+            if bv > av:
+                cs += 20
+            if tba > 0 and (bv - av) / tba > 0.2:
+                cs += 20
+            if bids and bids[0].get("size", 0) > 100:
+                cs += 20
+            if bv > av * 1.5:
+                cs += 20
             cs += 20
-    except Exception: pass
+        else:
+            cs = 50
+    except Exception:
+        cs = 50
     cs = max(0, min(100, cs))
 
     try:
         info, _ = fetch_fundamentals(symbol, suffix)
         if info:
-            e = info.get("trailingEps")
-            r = info.get("returnOnEquity")
-            d = info.get("dividendYield")
-            p = info.get("trailingPE")
-            g = info.get("revenueGrowth")
-            fs = 0
-            if e and e > 10: fs += 20
-            if r and r > 0.15: fs += 20
-            if d and d > 0.05: fs += 20
-            if p and 0 < p < 20: fs += 20
-            if g and g > 0: fs += 20
-    except Exception: pass
+            e, r, d, p, g = info.get("trailingEps"), info.get("returnOnEquity"), info.get("dividendYield"), info.get("trailingPE"), info.get("revenueGrowth")
+            if e and e > 10:
+                fs += 20
+            if r and r > 0.15:
+                fs += 20
+            if d and d > 0.05:
+                fs += 20
+            if p and 0 < p < 20:
+                fs += 20
+            if g and g > 0:
+                fs += 20
+        else:
+            fs = 50
+    except Exception:
+        fs = 50
     fs = max(0, min(100, fs))
 
     tot = ts * 0.3 + ids * 0.25 + cs * 0.2 + fs * 0.25
@@ -641,46 +900,41 @@ elif page == "📑 基本面分析":
         return info.get(key, default) if info.get(key) is not None else default
 
     def fmt_pct_ratio(val):
-        if val == "N/A" or pd.isna(val): return "N/A"
+        if val == "N/A" or pd.isna(val):
+            return "N/A"
         try:
             v = float(val)
             return f"{v:.2f}%" if abs(v) > 1 else f"{v*100:.2f}%"
-        except Exception: return "N/A"
+        except Exception:
+            return "N/A"
 
     def norm_rat(val):
-        if val == "N/A" or pd.isna(val): return None
+        if val == "N/A" or pd.isna(val):
+            return None
         try:
             v = float(val)
             return v/100 if abs(v) > 1 else v
-        except Exception: return None
+        except Exception:
+            return None
 
     def fmt_flt(val, dec=2):
-        if val == "N/A" or pd.isna(val): return "N/A"
-        try: return f"{float(val):.{dec}f}"
-        except Exception: return "N/A"
+        return f"{float(val):.{dec}f}" if val != "N/A" and not pd.isna(val) else "N/A"
 
     def fmt_curr(val):
-        if val == "N/A" or pd.isna(val): return "N/A"
+        if val == "N/A" or pd.isna(val):
+            return "N/A"
         try:
             v = float(val)
             return f"{v/1e12:.2f} 兆" if abs(v) >= 1e12 else f"{v/1e8:.2f} 億" if abs(v) >= 1e8 else f"{v/1e4:.2f} 萬" if abs(v) >= 1e4 else f"{v:,.0f}"
-        except Exception: return "N/A"
+        except Exception:
+            return "N/A"
 
     def fmt_date(val):
-        if val == "N/A" or pd.isna(val): return "N/A"
-        try: return datetime.fromtimestamp(val).strftime("%Y-%m-%d")
-        except Exception: return "N/A"
+        return datetime.fromtimestamp(val).strftime("%Y-%m-%d") if val != "N/A" and not pd.isna(val) else "N/A"
 
     sector = INDUSTRY_BACKUP.get(symbol, safe_get("sector"))
-    mc = safe_get("marketCap", 0)
-    emp = safe_get("fullTimeEmployees")
-    cty = safe_get("country")
-    cur = safe_get("currency")
-    eps = safe_get("trailingEps", 0)
-    pe = safe_get("trailingPE", 0)
-    pb = safe_get("priceToBook", 0)
-    roe = safe_get("returnOnEquity", 0)
-    dy = safe_get("dividendYield", 0)
+    mc, emp, cty, cur = safe_get("marketCap", 0), safe_get("fullTimeEmployees"), safe_get("country"), safe_get("currency")
+    eps, pe, pb, roe, dy = safe_get("trailingEps", 0), safe_get("trailingPE", 0), safe_get("priceToBook", 0), safe_get("returnOnEquity", 0), safe_get("dividendYield", 0)
 
     eps_str = fmt_flt(eps)
     pe_str = fmt_flt(pe)
@@ -707,11 +961,16 @@ elif page == "📑 基本面分析":
     c6.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>市值規模</div><div style='font-size:22px; font-weight:bold; color:#fff;'>{mc_str}</div></div>", unsafe_allow_html=True)
 
     score = 0
-    if eps != "N/A" and eps > 0: score += 20 if eps > 10 else 10 if eps > 5 else 0
-    if roe_norm is not None and roe_norm > 0: score += 20 if roe_norm > 0.15 else 10 if roe_norm > 0.1 else 0
-    if div_yield_norm is not None and div_yield_norm > 0: score += 20 if div_yield_norm > 0.05 else 10 if div_yield_norm > 0.03 else 0
-    if pe != "N/A" and pe > 0: score += 20 if pe < 15 else 10 if pe < 25 else 0
-    if pb != "N/A" and pb > 0: score += 20 if pb < 2 else 10 if pb < 4 else 0
+    if eps != "N/A" and eps > 0:
+        score += 20 if eps > 10 else 10 if eps > 5 else 0
+    if roe_norm is not None and roe_norm > 0:
+        score += 20 if roe_norm > 0.15 else 10 if roe_norm > 0.1 else 0
+    if div_yield_norm is not None and div_yield_norm > 0:
+        score += 20 if div_yield_norm > 0.05 else 10 if div_yield_norm > 0.03 else 0
+    if pe != "N/A" and pe > 0:
+        score += 20 if pe < 15 else 10 if pe < 25 else 0
+    if pb != "N/A" and pb > 0:
+        score += 20 if pb < 2 else 10 if pb < 4 else 0
     score = max(0, min(100, score))
 
     stg, scl = ("🔥 極度優秀", "#ff3b3b") if score >= 90 else ("✅ 基本面強勁", "#ff9900") if score >= 75 else ("👍 穩健型公司", "#ffcc00") if score >= 60 else ("⚠️ 普通", "#aaaaaa") if score >= 40 else ("❄️ 基本面偏弱", "#00e676")
@@ -721,8 +980,10 @@ elif page == "📑 基本面分析":
 
     st.markdown("---")
     s1, s2 = st.columns([3, 7])
-    with s1: st.plotly_chart(donut_chart("🤖 AI 評分", score, stg, scl), use_container_width=True)
-    with s2: st.markdown(f"<div class='card' style='height:260px; display:flex; align-items:center; padding:30px;'><h3 style='color:#fff; line-height:1.6;'>{ais}</h3></div>", unsafe_allow_html=True)
+    with s1:
+        st.plotly_chart(donut_chart("🤖 AI 評分", score, stg, scl), use_container_width=True)
+    with s2:
+        st.markdown(f"<div class='card' style='height:260px; display:flex; align-items:center; padding:30px;'><h3 style='color:#fff; line-height:1.6;'>{ais}</h3></div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("### 📅 每月營收")
@@ -807,6 +1068,217 @@ elif page == "📑 基本面分析":
             st.info("📡 暫無圖表資料")
     else:
         st.info("📡 暫無財報趨勢資料")
+# =====================
+# 🧩 籌碼分析
+# =====================
+elif page == "🧩 籌碼分析":
+    st.markdown(f"## 🧩 {display_name} 籌碼分析")
+
+    def fmt_chip_num(v, plus=False, bold=False):
+        try:
+            v = float(v)
+            color = "#ff3b3b" if v > 0 else "#00e676" if v < 0 else "#fff"
+            fw = "font-weight:bold;" if bold else ""
+            sign = "+" if plus and v > 0 else ""
+            text = f"{sign}{v:.0f} 張"
+            return f"<span style='color:{color}; {fw}'>{text}</span>"
+        except Exception:
+            return "<span style='color:#888;'>0 張</span>"
+
+    def fmt_plain_num(v):
+        try:
+            return f"{float(v):.0f} 張"
+        except Exception:
+            return "0 張"
+
+    if not FINMIND_TOKEN:
+        st.warning("⚠️ 未設定 FINMIND_TOKEN，無法獲取籌碼資料。")
+    else:
+        inst_df = fetch_institutional_chips(symbol, FINMIND_TOKEN)
+        margin_df = fetch_margin_chips(symbol, FINMIND_TOKEN)
+
+        def get_streak(series):
+            streak = 0
+            is_buy = None
+
+            vals = pd.to_numeric(series, errors="coerce").fillna(0).tolist()
+
+            for val in reversed(vals):
+                if is_buy is None:
+                    if val == 0:
+                        return "無明顯買賣"
+                    is_buy = val > 0
+
+                if (val > 0 and is_buy) or (val < 0 and not is_buy):
+                    streak += 1
+                else:
+                    break
+
+            return f"連 {streak} 買" if is_buy else f"連 {streak} 賣"
+
+        if not inst_df.empty:
+            for col in ["外資", "投信", "自營商", "合計"]:
+                inst_df[col] = pd.to_numeric(inst_df[col], errors="coerce").fillna(0)
+
+            f_streak = get_streak(inst_df["外資"])
+            t_streak = get_streak(inst_df["投信"])
+            d_streak = get_streak(inst_df["自營商"])
+            tot_streak = get_streak(inst_df["合計"])
+
+            st.markdown("### 📊 籌碼連買連賣")
+            cs1, cs2, cs3, cs4 = st.columns(4)
+
+            cs1.markdown(
+                f"<div class='card' style='text-align:center;'>"
+                f"<div style='color:#aaa;'>外資</div>"
+                f"<div style='font-size:22px; font-weight:bold; color:{'#ff3b3b' if '買' in f_streak else '#00e676'};'>{f_streak}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+            cs2.markdown(
+                f"<div class='card' style='text-align:center;'>"
+                f"<div style='color:#aaa;'>投信</div>"
+                f"<div style='font-size:22px; font-weight:bold; color:{'#ff3b3b' if '買' in t_streak else '#00e676'};'>{t_streak}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+            cs3.markdown(
+                f"<div class='card' style='text-align:center;'>"
+                f"<div style='color:#aaa;'>自營商</div>"
+                f"<div style='font-size:22px; font-weight:bold; color:{'#ff3b3b' if '買' in d_streak else '#00e676'};'>{d_streak}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+            cs4.markdown(
+                f"<div class='card' style='text-align:center;'>"
+                f"<div style='color:#aaa;'>三大法人合計</div>"
+                f"<div style='font-size:22px; font-weight:bold; color:{'#ff3b3b' if '買' in tot_streak else '#00e676'};'>{tot_streak}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+            st.markdown("---")
+            col1, col2 = st.columns([5, 5])
+
+            with col1:
+                st.markdown("### 🏦 三大法人買賣超 (張)")
+                inst_show = inst_df.iloc[::-1].copy()
+
+                h_inst = (
+                    "<div style='overflow-x:auto; max-height:400px; border-radius:12px; border:1px solid #222;'>"
+                    "<table class='fin-table'>"
+                    "<thead style='position:sticky; top:0; z-index:2; background:#222;'>"
+                    "<tr>"
+                    "<th style='padding:8px; color:#fff;'>日期</th>"
+                    "<th style='text-align:right; padding:8px; color:#fff;'>外資</th>"
+                    "<th style='text-align:right; padding:8px; color:#fff;'>投信</th>"
+                    "<th style='text-align:right; padding:8px; color:#fff;'>自營商</th>"
+                    "<th style='text-align:right; padding:8px; color:#fff;'>合計</th>"
+                    "</tr></thead><tbody>"
+                )
+
+                for _, r in inst_show.iterrows():
+                    h_inst += (
+                        f"<tr>"
+                        f"<td>{r['date']}</td>"
+                        f"<td style='text-align:right;'>{fmt_chip_num(r['外資'])}</td>"
+                        f"<td style='text-align:right;'>{fmt_chip_num(r['投信'])}</td>"
+                        f"<td style='text-align:right;'>{fmt_chip_num(r['自營商'])}</td>"
+                        f"<td style='text-align:right;'>{fmt_chip_num(r['合計'], bold=True)}</td>"
+                        f"</tr>"
+                    )
+
+                h_inst += "</tbody></table></div>"
+                st.markdown(h_inst, unsafe_allow_html=True)
+
+            with col2:
+                st.markdown("### 📈 籌碼趨勢圖")
+
+                plot_df = inst_df.copy()
+                plot_df["累計"] = plot_df["合計"].cumsum()
+
+                fig_c = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_c.add_trace(
+                    go.Bar(
+                        x=plot_df["date"],
+                        y=plot_df["合計"],
+                        name="單日買賣(張)",
+                        marker_color=["#ff3b3b" if v > 0 else "#00e676" for v in plot_df["合計"]]
+                    ),
+                    secondary_y=False
+                )
+
+                fig_c.add_trace(
+                    go.Scatter(
+                        x=plot_df["date"],
+                        y=plot_df["累計"],
+                        name="累計買賣超",
+                        line=dict(color="#ffcc00", width=2)
+                    ),
+                    secondary_y=True
+                )
+
+                fig_c.update_layout(
+                    template="plotly_dark",
+                    height=400,
+                    margin=dict(l=10, r=10, t=20, b=10),
+                    paper_bgcolor="#000",
+                    plot_bgcolor="#000",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                fig_c.update_xaxes(gridcolor="#111", type="category")
+                fig_c.update_yaxes(title_text="單日(張)", gridcolor="#111", secondary_y=False)
+                fig_c.update_yaxes(title_text="累計(張)", showgrid=False, secondary_y=True)
+                st.plotly_chart(fig_c, use_container_width=True)
+
+        else:
+            st.info("📡 暫無三大法人買賣超資料")
+
+        st.markdown("---")
+        st.markdown("### 🕵️ 主力買賣")
+        st.info("💡 主力分點資料需額外資料源，目前先以三大法人買賣超作為籌碼觀察。")
+
+        st.markdown("---")
+        st.markdown("### 🚶 散戶指標 (融資融券)")
+
+        if not margin_df.empty:
+            for col in ["融資餘額", "融券餘額", "融資增減", "融券增減"]:
+                margin_df[col] = pd.to_numeric(margin_df[col], errors="coerce").fillna(0)
+
+            mar_show = margin_df.iloc[::-1].copy()
+
+            h_mar = (
+                "<div style='overflow-x:auto; max-height:400px; border-radius:12px; border:1px solid #222;'>"
+                "<table class='fin-table'>"
+                "<thead style='position:sticky; top:0; z-index:2; background:#222;'>"
+                "<tr>"
+                "<th style='padding:8px; color:#fff;'>日期</th>"
+                "<th style='text-align:right; padding:8px; color:#fff;'>融資餘額(張)</th>"
+                "<th style='text-align:right; padding:8px; color:#fff;'>融資增減</th>"
+                "<th style='text-align:right; padding:8px; color:#fff;'>融券餘額(張)</th>"
+                "<th style='text-align:right; padding:8px; color:#fff;'>融券增減</th>"
+                "</tr></thead><tbody>"
+            )
+
+            for _, r in mar_show.iterrows():
+                h_mar += (
+                    f"<tr>"
+                    f"<td>{r['date']}</td>"
+                    f"<td style='text-align:right'>{fmt_plain_num(r['融資餘額'])}</td>"
+                    f"<td style='text-align:right'>{fmt_chip_num(r['融資增減'], plus=True)}</td>"
+                    f"<td style='text-align:right'>{fmt_plain_num(r['融券餘額'])}</td>"
+                    f"<td style='text-align:right'>{fmt_chip_num(r['融券增減'], plus=True)}</td>"
+                    f"</tr>"
+                )
+
+            h_mar += "</tbody></table></div>"
+            st.markdown(h_mar, unsafe_allow_html=True)
+
+        else:
+            st.info("📡 暫無融資融券資料")
 
 # =====================
 # 底部資訊 (全頁共用)
@@ -817,20 +1289,24 @@ b1, b2 = st.columns([4, 6])
 with b1:
     pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
     st.markdown(
-        f"<div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>"
-        f"<h3>💰 庫存狀態</h3>"
-        f"<p style='color:#aaa;'>{display_name}</p>"
-        f"<p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>"
-        f"<p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>"
-        f"現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>"
-        f"</p>"
-        f"<h3>📊 總盈虧</h3>"
-        f"<div style='font-size:42px; font-weight:bold; color:{pnl_c};'>{int(profit):,} 元</div>"
-        f"</div>",
+        f"""
+        <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
+            <h3>💰 庫存狀態</h3>
+            <p style='color:#aaa;'>{display_name}</p>
+            <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
+            <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
+                現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
+            </p>
+            <h3>📊 總盈虧</h3>
+            <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
+                {int(profit):,} 元
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
-if page != "📑 基本面分析":
+if page not in ["📑 基本面分析", "🧩 籌碼分析"]:
     with b2:
         st.markdown("### ⚖️ 即時五檔明細")
         render_order_book(bids, asks, prev_c, curr)
