@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 import feedparser
 from urllib.parse import quote
 from streamlit_autorefresh import st_autorefresh
@@ -56,7 +56,7 @@ html, body, [class*="st-"]{
 """, unsafe_allow_html=True)
 
 # =========================
-# 台股字典
+# 股票名稱字典
 # =========================
 @st.cache_data(ttl=86400)
 def load_market_dict():
@@ -65,6 +65,7 @@ def load_market_dict():
 
     # ===== 上市 =====
     try:
+
         url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 
         r = requests.get(url_twse, timeout=10)
@@ -87,6 +88,7 @@ def load_market_dict():
 
     # ===== 上櫃 =====
     try:
+
         url_otc = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
 
         r2 = requests.get(url_otc, timeout=10)
@@ -123,6 +125,7 @@ def load_market_dict():
         "00929":"復華台灣科技優息",
         "006208":"富邦台50",
         "00713":"元大高息低波",
+        "00679B":"元大美債20年"
     }
 
     for k, v in etf_extra.items():
@@ -148,20 +151,34 @@ with c1:
 
 with c2:
 
-    # ===== 股票搜尋 =====
-    stock_list = []
+    # ===== 建立搜尋清單 =====
+    stock_options = []
+
+    used = set()
 
     for k, v in MASTER_DICT.items():
 
-        if str(k).isdigit():
+        code = str(k).strip()
+        name = str(v).strip()
 
-            stock_list.append(f"{k} {v}")
+        # 只建立「代號 名稱」
+        if (
+            code not in used
+            and (
+                code.isdigit()
+                or code.endswith("B")
+            )
+        ):
 
-    stock_list = sorted(list(set(stock_list)))
+            stock_options.append(f"{code} {name}")
+            used.add(code)
 
+    stock_options = sorted(stock_options)
+
+    # ===== 搜尋選單 =====
     selected_stock = st.selectbox(
-        "🔍 搜尋股票",
-        stock_list,
+        "🔍 搜尋股票（代號 / 中文）",
+        stock_options,
         index=0
     )
 
@@ -228,6 +245,7 @@ def flatten_columns(df):
 def fetch_history(symbol, period, interval):
 
     try:
+
         df = yf.download(
             f"{symbol}.TW",
             period=period,
@@ -246,6 +264,7 @@ def fetch_history(symbol, period, interval):
     if df.empty:
 
         try:
+
             df = yf.download(
                 f"{symbol}.TWO",
                 period=period,
@@ -272,6 +291,7 @@ def fetch_history(symbol, period, interval):
 def fetch_intraday(symbol, suffix):
 
     try:
+
         df_i = yf.download(
             f"{symbol}{suffix}",
             period="5d",
@@ -300,12 +320,12 @@ def fetch_intraday(symbol, suffix):
     return df_i
 
 # =========================
-# 資料
+# 取得資料
 # =========================
 df, suffix = fetch_history(symbol, period, tf)
 
 if df.empty:
-    st.error("查無股票資料")
+    st.error(f"查無股票資料：{symbol}")
     st.stop()
 
 curr = float(df["Close"].iloc[-1])
@@ -362,7 +382,7 @@ if page == "📊 K線分析":
         col=1
     )
 
-    # ===== MA =====
+    # ===== MA5 =====
     if show_ma5:
 
         fig.add_trace(
@@ -377,6 +397,7 @@ if page == "📊 K線分析":
             col=1
         )
 
+    # ===== MA10 =====
     if show_ma10:
 
         fig.add_trace(
@@ -391,6 +412,7 @@ if page == "📊 K線分析":
             col=1
         )
 
+    # ===== MA20 =====
     if show_ma20:
 
         fig.add_trace(
@@ -489,6 +511,7 @@ elif page == "⚡ 即時趨勢":
 
             if prev is None:
                 vol_colors.append("#ff3b3b")
+
             else:
 
                 if row["Close"] >= prev:
@@ -561,10 +584,17 @@ elif page == "📰 AI新聞預測":
             st.markdown(
                 f"""
                 <div class='card' style='margin-bottom:10px;'>
-                <a href="{link}" target="_blank"
-                style="color:white;font-size:18px;text-decoration:none;">
+
+                <a href="{link}"
+                   target="_blank"
+                   style="color:white;
+                          font-size:18px;
+                          text-decoration:none;">
+
                 {i}. {title}
+
                 </a>
+
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -575,7 +605,7 @@ elif page == "📰 AI新聞預測":
         st.error(f"新聞載入失敗：{e}")
 
 # =========================
-# 底部
+# 底部庫存
 # =========================
 st.markdown("---")
 
@@ -591,8 +621,12 @@ st.markdown(
 
     <p>
     現價：
-    <span style='color:{price_color(curr, prev_c)};font-size:24px;font-weight:bold;'>
+    <span style='color:{price_color(curr, prev_c)};
+                 font-size:24px;
+                 font-weight:bold;'>
+
     {curr:.2f}
+
     </span>
     </p>
 
