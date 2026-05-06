@@ -1,3 +1,7 @@
+# Streamlit Cloud Secrets 設定參考：
+# FINMIND_TOKEN = "你的 FinMind Token"
+# FUGLE_API = "你的 Fugle Token"
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -5,10 +9,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import os
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
-import feedparser
-from urllib.parse import quote
-from streamlit_autorefresh import st_autorefresh
 
 # =====================
 # 頁面設定
@@ -43,6 +45,50 @@ html,body,[class*='st-']{background-color:#000;color:#eee;}
 """, unsafe_allow_html=True)
 
 # =====================
+# Token 讀取：本機 / Streamlit Cloud 皆可用
+# =====================
+def read_secret_safe(key, default=""):
+    try:
+        return st.secrets[key]
+    except Exception:
+        return default
+
+def read_file_safe(path):
+    try:
+        p = Path(path)
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+def find_local_token(filename):
+    """本機測試用：自動搜尋目前資料夾、程式所在資料夾、使用者 Documents。"""
+    candidates = [
+        Path.cwd() / filename,
+        Path(__file__).resolve().parent / filename,
+        Path.home() / "Documents" / filename,
+        Path.home() / "文件" / filename,
+    ]
+    for p in candidates:
+        token = read_file_safe(p)
+        if token:
+            return token
+    return ""
+
+FINMIND_TOKEN = read_secret_safe("FINMIND_TOKEN", "") or find_local_token("finmind_token.txt")
+FUGLE_SECRET = read_secret_safe("FUGLE_API", "") or find_local_token("fugle_token.txt")
+
+# 本機測試防呆：如果讀不到 finmind_token.txt，就在網頁上手動貼一次測試
+if not FINMIND_TOKEN:
+    FINMIND_TOKEN = st.sidebar.text_input(
+        "🔑 FinMind Token（本機測試用）",
+        value="",
+        type="password",
+        help="本機讀不到 finmind_token.txt 時，先貼在這裡測試。上雲端後改用 Streamlit Secrets。"
+    ).strip()
+
+# =====================
 # 股票字典 (三層備援)
 # =====================
 @st.cache_data(ttl=86400)
@@ -55,7 +101,8 @@ def load_market_dict():
             for i in r.json():
                 market_dict[i["Code"]] = i["Name"]
                 market_dict[i["Name"]] = i["Code"]
-    except: pass
+    except Exception as e:
+        print("TWSE OpenAPI 載入失敗:", e)
 
     try:
         r2 = requests.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes", headers=headers, timeout=5)
@@ -66,17 +113,19 @@ def load_market_dict():
                 if c and n:
                     market_dict[c] = n
                     market_dict[n] = c
-    except: pass
+    except Exception as e:
+        print("TPEX OpenAPI 載入失敗:", e)
 
     if len(market_dict) < 1000:
         try:
             r_twse = requests.get("https://isin.twse.com.tw/isin/C_public.jsp?strMode=2", headers=headers, timeout=10)
             for _, row in pd.read_html(r_twse.text)[0].iterrows():
                 parts = str(row[0]).strip().replace("　", " ").split(maxsplit=1)
-                if len(parts) == 2 and parts[0].isalnum(): 
+                if len(parts) == 2 and parts[0].isalnum():
                     market_dict[parts[0]] = parts[1].strip()
                     market_dict[parts[1].strip()] = parts[0]
-        except: pass
+        except Exception as e:
+            print("上市 ISIN 載入失敗:", e)
         try:
             r_tpex = requests.get("https://isin.twse.com.tw/isin/C_public.jsp?strMode=4", headers=headers, timeout=10)
             for _, row in pd.read_html(r_tpex.text)[0].iterrows():
@@ -84,15 +133,26 @@ def load_market_dict():
                 if len(parts) == 2 and parts[0].isalnum():
                     market_dict[parts[0]] = parts[1].strip()
                     market_dict[parts[1].strip()] = parts[0]
-        except: pass
+        except Exception as e:
+            print("上櫃 ISIN 載入失敗:", e)
 
-    for k, v in {"0050":"元大台灣50", "0056":"元大高股息", "00878":"國泰永續高股息", "1711":"永光", "2330":"台積電", "2454":"聯發科", "2317":"鴻海", "2603":"長榮"}.items():
-        if k not in market_dict:
-            market_dict[k] = v; market_dict[v] = k
+    for k, v in {
+        "0050":"元大台灣50", "0056":"元大高股息", "006208":"富邦台50",
+        "00713":"元大高息低波", "00757":"統一FANG+", "00679B":"元大美債20年",
+        "00878":"國泰永續高股息", "00919":"群益台灣精選高息", "00929":"復華台灣科技優息",
+        "00940":"元大台灣價值高息", "1711":"永光", "2330":"台積電", "2454":"聯發科",
+        "2317":"鴻海", "2313":"華通", "2603":"長榮", "2618":"長榮航"
+    }.items():
+        market_dict[k] = v
+        market_dict[v] = k
     return market_dict
 
 MASTER_DICT = load_market_dict()
-INDUSTRY_BACKUP = {"2330":"半導體業", "2317":"其他電子業", "2454":"半導體業", "2603":"航運業", "1711":"化學工業", "2313":"電子零組件業", "0050":"ETF"}
+INDUSTRY_BACKUP = {
+    "2330":"半導體業", "2317":"其他電子業", "2454":"半導體業", "2603":"航運業",
+    "2618":"航運業", "1711":"化學工業", "2313":"電子零組件業", "0050":"ETF",
+    "0056":"ETF", "00878":"ETF", "00919":"ETF", "00679B":"債券ETF"
+}
 
 # =====================
 # 頂部控制列
@@ -108,17 +168,24 @@ with c2:
 
     if stock_input in MASTER_DICT:
         if stock_input.isdigit() or stock_input.endswith("B"):
-            symbol = stock_input; stock_name = MASTER_DICT.get(symbol, symbol)
+            symbol = stock_input
+            stock_name = MASTER_DICT.get(symbol, symbol)
         else:
-            symbol = MASTER_DICT.get(stock_input, stock_input); stock_name = stock_input
+            symbol = MASTER_DICT.get(stock_input, stock_input)
+            stock_name = stock_input
     else:
         exact, fuzzy = None, None
         for k, v in MASTER_DICT.items():
             if isinstance(v, str):
-                if stock_input == v: exact = (k, v); break 
-                elif stock_input in v and not fuzzy: fuzzy = (k, v) 
-        if exact: symbol, stock_name = exact
-        elif fuzzy: symbol, stock_name = fuzzy
+                if stock_input == v:
+                    exact = (k, v)
+                    break
+                elif stock_input in v and not fuzzy:
+                    fuzzy = (k, v)
+        if exact:
+            symbol, stock_name = exact
+        elif fuzzy:
+            symbol, stock_name = fuzzy
 
     display_name = f"{symbol} {stock_name}"
 
@@ -132,33 +199,28 @@ with c3:
     with ma3: show_ma20 = st.checkbox("20線", True)
 
 with c4:
-    TOKEN_FILE = "fugle_token.txt"
-    def get_token():
+    api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
+    if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
         try:
-            if "FUGLE_API" in st.secrets: return st.secrets["FUGLE_API"]
-        except: pass
-        if os.path.exists(TOKEN_FILE): return open(TOKEN_FILE, "r").read().strip()
-        return ""
-
-    api_key = st.text_input("🔑 Fugle Token", value=get_token(), type="password")
-    try: has_secret = "FUGLE_API" in st.secrets
-    except: has_secret = False
-    if api_key and api_key != get_token() and not has_secret:
-        try:
-            with open(TOKEN_FILE, "w") as f: f.write(api_key)
-        except: pass
+            with open("fugle_token.txt", "w", encoding="utf-8") as f:
+                f.write(api_key)
+        except Exception:
+            pass
 
 p1, p2 = st.columns(2)
 with p1: qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
 with p2: cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
 
-st_autorefresh(interval=15000, key="auto_refresh")
+# 關閉自動刷新，避免 Streamlit 前端 removeChild 錯誤
+if st.button("🔄 手動刷新"):
+    st.rerun()
 
 # =====================
 # 資料擷取引擎
 # =====================
 def flatten_columns(df):
-    if not df.empty and isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+    if not df.empty and isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
     return df
 
 @st.cache_data(ttl=30)
@@ -168,7 +230,8 @@ def fetch_history(symbol, period, interval):
     if df.empty:
         df = flatten_columns(yf.download(f"{symbol}.TWO", period=period, interval=interval, progress=False, threads=False, auto_adjust=False))
         suffix = ".TWO"
-    if not df.empty: df = df.dropna(subset=["Open", "High", "Low", "Close"]).tail(80)
+    if not df.empty:
+        df = df.dropna(subset=["Open", "High", "Low", "Close"]).tail(80)
     return df, suffix
 
 @st.cache_data(ttl=10)
@@ -182,28 +245,75 @@ def fetch_intraday(symbol, suffix):
 
 @st.cache_data(ttl=3600)
 def fetch_fundamentals(symbol, suffix):
-    try: t = yf.Ticker(f"{symbol}{suffix}"); info = t.info
-    except: info = {}
-    try: fin = t.financials; fin = fin.T.sort_index() if fin is not None and not fin.empty else pd.DataFrame()
-    except: fin = pd.DataFrame()
+    try:
+        t = yf.Ticker(f"{symbol}{suffix}")
+        info = t.info
+    except Exception:
+        info = {}
+        t = None
+
+    try:
+        fin = t.financials if t is not None else pd.DataFrame()
+        fin = fin.T.sort_index() if fin is not None and not fin.empty else pd.DataFrame()
+    except Exception:
+        fin = pd.DataFrame()
+
     return info, fin
 
 @st.cache_data(ttl=3600)
-def fetch_monthly_revenue(symbol):
+def fetch_monthly_revenue(symbol, finmind_token):
     res_df = pd.DataFrame()
+    if not finmind_token:
+        return res_df
+
     try:
-        r = requests.get("https://api.finmindtrade.com/api/v4/data", params={"dataset": "TaiwanStockMonthRevenue", "data_id": str(symbol), "start_date": (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d")}, timeout=5)
+        headers = {"Authorization": f"Bearer {finmind_token}"}
+        start_date = (datetime.now() - timedelta(days=800)).strftime("%Y-%m-%d")
+
+        params = {
+            "dataset": "TaiwanStockMonthRevenue",
+            "data_id": str(symbol),
+            "start_date": start_date,
+            "token": finmind_token,
+        }
+
+        r = requests.get(
+            "https://api.finmindtrade.com/api/v4/data",
+            params=params,
+            headers=headers,
+            timeout=10
+        )
+
         if r.status_code == 200:
             data = r.json().get("data", [])
+
             if data:
-                df = pd.DataFrame(data).sort_values("date", ascending=False).head(12)
-                res_df = pd.DataFrame([{
-                    "月份": datetime.strptime(row["date"], "%Y-%m-%d").strftime("%Y/%m"),
-                    "營收（億元台幣）": round(float(row["revenue"]) / 1e8, 2),
-                    "月增率 MoM": float(row.get("revenue_month_over_month", 0)),
-                    "年增率 YoY": float(row.get("revenue_year_over_year", 0))
-                } for _, row in df.iterrows()])
-    except: pass
+                df = pd.DataFrame(data)
+
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce")
+
+                df = df.dropna(subset=["date", "revenue"])
+                df = df.sort_values("date", ascending=True).reset_index(drop=True)
+
+                df["營收（億元台幣）"] = df["revenue"] / 1e8
+                df["月增率 MoM"] = df["revenue"].pct_change(1) * 100
+                df["年增率 YoY"] = df["revenue"].pct_change(12) * 100
+
+                df["月增率 MoM"] = df["月增率 MoM"].fillna(0)
+                df["年增率 YoY"] = df["年增率 YoY"].fillna(0)
+
+                df["月份"] = df["date"].dt.strftime("%Y/%m")
+
+                res_df = df[
+                    ["月份", "營收（億元台幣）", "月增率 MoM", "年增率 YoY"]
+                ].tail(12)
+
+                res_df = res_df.iloc[::-1].reset_index(drop=True)
+
+    except Exception as e:
+        print("月營收錯誤:", e)
+
     return res_df
 
 def fetch_fugle_quote(symbol, api_key):
@@ -211,7 +321,7 @@ def fetch_fugle_quote(symbol, api_key):
     try:
         r = requests.get(f"https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/{symbol}", headers={"X-API-KEY": api_key}, timeout=3)
         if r.status_code == 200: return r.json()
-    except: pass
+    except Exception: pass
     return {}
 
 def fetch_fugle_trades(symbol, api_key):
@@ -221,9 +331,12 @@ def fetch_fugle_trades(symbol, api_key):
         if r.status_code == 200:
             d = r.json()
             return d if isinstance(d, list) else d.get("data", d.get("trades", []))
-    except: pass
+    except Exception: pass
     return []
 
+# =====================
+# 共用函式
+# =====================
 def price_color(price, prev_c):
     if price == 0 or prev_c == 0: return "#fff"
     return "#ff3b3b" if price > prev_c else "#00e676" if price < prev_c else "#fff"
@@ -231,15 +344,74 @@ def price_color(price, prev_c):
 def format_trade_time(raw_time):
     try:
         r = str(raw_time).strip()
-        if r.isdigit(): return datetime.fromtimestamp(float(r) / (10**(len(r)-10)) if len(r)>10 else float(r), tz=timezone(timedelta(hours=8))).strftime("%H:%M:%S")
+        if r.isdigit(): return datetime.fromtimestamp(float(r) / (10 ** (len(r) - 10)) if len(r) > 10 else float(r), tz=timezone(timedelta(hours=8))).strftime("%H:%M:%S")
         return r.split("T")[-1].split(".")[0] if "T" in r else r.split(".")[0]
-    except: return str(raw_time)[:8]
+    except Exception: return str(raw_time)[:8]
 
 def donut_chart(title, value, label, color):
     value = max(0, min(100, int(value)))
     fig = go.Figure(data=[go.Pie(values=[value, 100 - value], hole=0.72, textinfo="none", sort=False, marker=dict(colors=[color, "#222"]))])
     fig.update_layout(template="plotly_dark", height=260, margin=dict(l=5, r=5, t=40, b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", title=dict(text=title, x=0.5, font=dict(size=20, color="#fff")), annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))])
     return fig
+
+# =====================
+# 渲染模組
+# =====================
+def render_order_book(bids, asks, prev_c, curr):
+    if not bids and not asks:
+        st.info("📡 五檔尚未連線或非盤中時間"); return
+    all_vols = [x.get("size", 0) for x in bids + asks]; max_v = max(all_vols) if all_vols else 1
+    buy5, sell5 = bids[:5], asks[:5]
+    rows = ""
+    for i in range(5):
+        bp = buy5[i].get("price", 0) if i < len(buy5) else 0
+        bs = buy5[i].get("size", 0) if i < len(buy5) else 0
+        ap = sell5[i].get("price", 0) if i < len(sell5) else 0
+        as_ = sell5[i].get("size", 0) if i < len(sell5) else 0
+        bw = int((bs / max_v) * 100) if max_v else 0
+        aw = int((as_ / max_v) * 100) if max_v else 0
+        bc = price_color(bp, prev_c) if bp > 0 else "#777"
+        ac = price_color(ap, prev_c) if ap > 0 else "#777"
+        rows += f"<tr><td style='width:55px; text-align:right; color:#aaa;'>{bs if bs>0 else ''}</td><td style='width:170px;'><div class='bar-bg'><div class='buy-bar' style='width:{bw}%;'></div></div></td><td class='order-price' style='width:85px; text-align:right; color:{bc};'>{f'{bp:.2f}' if bp>0 else '--'}</td><td style='width:55px; text-align:center; color:#555;'>│</td><td class='order-price' style='width:85px; text-align:left; color:{ac};'>{f'{ap:.2f}' if ap>0 else '--'}</td><td style='width:170px;'><div class='bar-bg'><div class='sell-bar' style='width:{aw}%;'></div></div></td><td style='width:55px; text-align:left; color:#aaa;'>{as_ if as_>0 else ''}</td></tr>"
+    st.markdown(f"<div style='background:#050505; padding:12px; border-radius:10px; border:1px solid #222;'><div style='text-align:center; color:#ffcc00; font-size:20px; font-weight:bold; margin-bottom:8px;'>現價 {curr:.2f}</div><table class='order-table'><thead><tr><th>買量</th><th></th><th>買價</th><th></th><th>賣價</th><th></th><th>賣量</th></tr></thead><tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
+
+def render_trade_details(trades, prev_c):
+    st.markdown("### 📜 成交明細")
+    if not trades:
+        st.info("📡 尚無成交明細資料。"); return
+    rows = ""
+    for t in trades[:60]:
+        try: p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+        except Exception: p = 0
+        try: s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+        except Exception: s = 0
+        rows += f"<tr><td>{format_trade_time(t.get('time', t.get('at', t.get('date', ''))))}</td><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='text-align:right;'>{s}</td></tr>"
+    st.markdown(f"<div class='card' style='padding:0;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2; background:#111;'><tr><th>時間</th><th style='text-align:right;'>成交價</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
+
+def render_volume_summary(bids, asks, trades, df_i, prev_c):
+    st.markdown("### 📊 委託 / 成交量統計")
+    bid_total, ask_total = sum(x.get("size", 0) for x in bids), sum(x.get("size", 0) for x in asks)
+    price_vol = {}
+    for t in trades:
+        try:
+            p = float(t.get("price", t.get("tradePrice", 0)) or 0)
+            s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+            if p > 0 and s > 0: price_vol[p] = price_vol.get(p, 0) + s
+        except Exception: continue
+    trade_total = sum(price_vol.values()) or (int(df_i["Volume"].sum()) if not df_i.empty and "Volume" in df_i.columns else 0)
+    bid_pct = (bid_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
+    ask_pct = (ask_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
+    st.markdown(f"<div class='card'><div style='display:flex; gap:14px;'><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託買量</div><div style='font-size:28px; color:#ff3b3b; font-weight:bold;'>{bid_total:,}</div><div style='color:#888; font-size:12px;'>{bid_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託賣量</div><div style='font-size:28px; color:#00e676; font-weight:bold;'>{ask_total:,}</div><div style='color:#888; font-size:12px;'>{ask_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>總成交量</div><div style='font-size:28px; color:#ffcc00; font-weight:bold;'>{int(trade_total):,}</div><div style='color:#888; font-size:12px;'>今日累計</div></div></div><div style='margin-top:16px;'><div style='height:14px; background:#1a1a1a; border-radius:4px; display:flex; overflow:hidden;'><div style='width:{bid_pct}%; background:#ff3b3b;'></div><div style='width:{ask_pct}%; background:#00e676;'></div></div><div style='display:flex; justify-content:space-between; color:#aaa; margin-top:6px; font-size:12px;'><span>委買佔比</span><span>委賣佔比</span></div></div></div>", unsafe_allow_html=True)
+    
+    st.markdown("### 📈 今日成交價量分布（低 → 高）")
+    if not price_vol:
+        st.info("📡 尚無逐價成交量資料。"); return
+    max_v = max(price_vol.values()) if price_vol else 1
+    rows = ""
+    for p in sorted(price_vol.keys()):
+        w = int((price_vol[p] / max_v) * 100)
+        rows += f"<tr><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='width:70%;'><div style='height:16px; background:#1a1a1a; border-radius:3px;'><div style='height:16px; width:{w}%; background:#ffcc00; border-radius:3px;'></div></div></td><td style='text-align:right;'>{price_vol[p]}</td></tr>"
+    st.markdown(f"<div class='card' style='padding:0; margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2; background:#111;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
 
 # =====================
 # 主資料處理
@@ -260,61 +432,9 @@ curr = float(trade_price) if trade_price not in [None, 0] and not pd.isna(trade_
 bids, asks = q.get("bids") or [], q.get("asks") or []
 trades = fetch_fugle_trades(symbol, api_key) or []
 profit = (curr - cost) * qty * 1000
-diff, pct = curr - prev_c, ((curr - prev_c) / prev_c * 100) if prev_c else 0
+diff = curr - prev_c
+pct = (diff / prev_c * 100) if prev_c else 0
 df_i_for_summary = fetch_intraday(symbol, suffix)
-
-# =====================
-# 共用渲染模組
-# =====================
-def render_order_book(bids, asks, prev_c, curr):
-    if not bids and not asks:
-        st.info("📡 五檔尚未連線或非盤中時間"); return
-    all_vols = [x.get("size", 0) for x in bids + asks]
-    max_v = max(all_vols) if all_vols else 1
-    buy5, sell5 = bids[:5], asks[:5]
-    rows = ""
-    for i in range(5):
-        bp, bs = buy5[i].get("price", 0) if i < len(buy5) else 0, buy5[i].get("size", 0) if i < len(buy5) else 0
-        ap, as_ = sell5[i].get("price", 0) if i < len(sell5) else 0, sell5[i].get("size", 0) if i < len(sell5) else 0
-        bw, aw = int((bs / max_v) * 100) if max_v else 0, int((as_ / max_v) * 100) if max_v else 0
-        bc, ac = price_color(bp, prev_c) if bp > 0 else "#777", price_color(ap, prev_c) if ap > 0 else "#777"
-        rows += f"<tr><td style='width:55px; text-align:right; color:#aaa;'>{bs if bs>0 else ''}</td><td style='width:170px;'><div class='bar-bg'><div class='buy-bar' style='width:{bw}%;'></div></div></td><td class='order-price' style='width:85px; text-align:right; color:{bc};'>{f'{bp:.2f}' if bp>0 else '--'}</td><td style='width:55px; text-align:center; color:#555;'>│</td><td class='order-price' style='width:85px; text-align:left; color:{ac};'>{f'{ap:.2f}' if ap>0 else '--'}</td><td style='width:170px;'><div class='bar-bg'><div class='sell-bar' style='width:{aw}%;'></div></div></td><td style='width:55px; text-align:left; color:#aaa;'>{as_ if as_>0 else ''}</td></tr>"
-    st.markdown(f"<div style='background:#050505; padding:12px; border-radius:10px; border:1px solid #222;'><div style='text-align:center; color:#ffcc00; font-size:20px; font-weight:bold; margin-bottom:8px;'>現價 {curr:.2f}</div><table class='order-table'><thead><tr><th>買量</th><th></th><th>買價</th><th></th><th>賣價</th><th></th><th>賣量</th></tr></thead><tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
-
-def render_trade_details(trades, prev_c):
-    st.markdown("### 📜 成交明細")
-    if not trades:
-        st.info("📡 尚無成交明細資料。"); return
-    rows = ""
-    for t in trades[:60]:
-        try: p = float(t.get("price", t.get("tradePrice", 0)) or 0)
-        except: p = 0
-        try: s = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
-        except: s = 0
-        rows += f"<tr><td>{format_trade_time(t.get('time', t.get('at', t.get('date', ''))))}</td><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='text-align:right;'>{s}</td></tr>"
-    st.markdown(f"<div class='card' style='padding:0;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2;'><tr><th>時間</th><th style='text-align:right;'>成交價</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
-
-def render_volume_summary(bids, asks, trades, df_i, prev_c):
-    st.markdown("### 📊 委託 / 成交量統計")
-    bid_total, ask_total = sum(x.get("size", 0) for x in bids), sum(x.get("size", 0) for x in asks)
-    price_vol = {}
-    for t in trades:
-        try:
-            p, s = float(t.get("price", t.get("tradePrice", 0)) or 0), int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
-            if p > 0 and s > 0: price_vol[p] = price_vol.get(p, 0) + s
-        except: continue
-    trade_total = sum(price_vol.values()) or (int(df_i["Volume"].sum()) if not df_i.empty and "Volume" in df_i.columns else 0)
-    bid_pct = (bid_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
-    ask_pct = (ask_total / (bid_total + ask_total) * 100) if (bid_total + ask_total) else 0
-
-    st.markdown(f"<div class='card'><div style='display:flex; gap:14px;'><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託買量</div><div style='font-size:28px; color:#ff3b3b; font-weight:bold;'>{bid_total:,}</div><div style='color:#888; font-size:12px;'>{bid_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>委託賣量</div><div style='font-size:28px; color:#00e676; font-weight:bold;'>{ask_total:,}</div><div style='color:#888; font-size:12px;'>{ask_pct:.1f}%</div></div><div style='flex:1; text-align:center;'><div style='color:#aaa;'>總成交量</div><div style='font-size:28px; color:#ffcc00; font-weight:bold;'>{int(trade_total):,}</div><div style='color:#888; font-size:12px;'>今日累計</div></div></div><div style='margin-top:16px;'><div style='height:14px; background:#1a1a1a; border-radius:4px; display:flex; overflow:hidden;'><div style='width:{bid_pct}%; background:#ff3b3b;'></div><div style='width:{ask_pct}%; background:#00e676;'></div></div><div style='display:flex; justify-content:space-between; color:#aaa; margin-top:6px; font-size:12px;'><span>委買佔比</span><span>委賣佔比</span></div></div></div>", unsafe_allow_html=True)
-
-    st.markdown("### 📈 今日成交價量分布（低 → 高）")
-    if not price_vol: st.info("📡 尚無逐價成交量資料。"); return
-    max_v, rows = max(price_vol.values()), ""
-    for p in sorted(price_vol.keys()):
-        rows += f"<tr><td style='color:{price_color(p, prev_c)}; font-weight:bold; text-align:right;'>{p:.2f}</td><td style='width:70%;'><div style='height:16px; background:#1a1a1a; border-radius:3px;'><div style='height:16px; width:{int((price_vol[p]/max_v)*100)}%; background:#ffcc00; border-radius:3px;'></div></div></td><td style='text-align:right;'>{price_vol[p]}</td></tr>"
-    st.markdown(f"<div class='card' style='padding:0; margin-top:12px;'><div style='max-height:320px; overflow-y:auto; padding:15px;'><table class='fin-table'><thead style='position:sticky; top:-15px; z-index:2;'><tr><th style='text-align:right;'>價格</th><th style='text-align:center;'>量條</th><th style='text-align:right;'>成交量</th></tr></thead><tbody>{rows}</tbody></table></div></div>", unsafe_allow_html=True)
 
 # =====================
 # 📊 K線分析
@@ -323,8 +443,8 @@ if page == "📊 K線分析":
     st.markdown(f"## 📊 {display_name}")
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.02)
     fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
-    if cost > 0: fig.add_trace(go.Scatter(x=df.index, y=[cost]*len(df), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=[curr]*len(df), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
+    if cost > 0: fig.add_trace(go.Scatter(x=df.index, y=[cost] * len(df), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=[curr] * len(df), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
     if show_ma5: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(5).mean(), mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
     if show_ma10: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(10).mean(), mode="lines", line=dict(color="#00E5FF", width=1.5), name="MA10"), row=1, col=1)
     if show_ma20: fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(20).mean(), mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
@@ -354,34 +474,40 @@ elif page == "⚡ 即時趨勢":
         df_plot["VWAP"] = (df_plot["Close"] * df_plot["Volume"]).cumsum() / df_plot["Volume"].cumsum().replace(0, pd.NA)
         df_plot["VWAP"] = df_plot["VWAP"].bfill().fillna(df_plot["Close"])
 
-        high_val, low_val = max(df_plot["High"].max(), curr), min(df_plot["Low"].min(), curr)
+        high_val = max(df_plot["High"].max(), curr)
+        low_val = min(df_plot["Low"].min(), curr)
         amp_pct = ((high_val - low_val) / low_val) * 100 if low_val > 0 else 0
 
         buy_vol, sell_vol, v_colors, p_c = 0, 0, [], prev_c
         for _, r in df_plot.iterrows():
             c, v = r["Close"], r["Volume"] if not pd.isna(r["Volume"]) else 0
-            if c >= p_c: buy_vol += v; v_colors.append("rgba(255,59,59,0.8)")
-            else: sell_vol += v; v_colors.append("rgba(0,230,118,0.8)")
+            if c >= p_c:
+                buy_vol += v; v_colors.append("rgba(255,59,59,0.8)")
+            else:
+                sell_vol += v; v_colors.append("rgba(0,230,118,0.8)")
             p_c = c
-        buy_pct = (buy_vol/(buy_vol+sell_vol)*100) if (buy_vol+sell_vol) else 50
-        sell_pct = (sell_vol/(buy_vol+sell_vol)*100) if (buy_vol+sell_vol) else 50
+        buy_pct = (buy_vol / (buy_vol + sell_vol) * 100) if (buy_vol + sell_vol) else 50
+        sell_pct = 100 - buy_pct
 
-        df_plot['VMA'] = df_plot['Volume'].rolling(10).mean().shift(1)
-        surges = [f"⚠️ {dt.strftime('%H:%M')} 爆量 {r['Volume']/r['VMA']:.1f} 倍" for dt, r in df_plot.iterrows() if r['Volume'] > 0 and r['VMA'] > 0 and r['Volume'] > r['VMA']*2][-5:]
+        df_plot["VMA"] = df_plot["Volume"].rolling(10).mean().shift(1)
+        surges = [f"⚠️ {dt.strftime('%H:%M')} 爆量 {r['Volume'] / r['VMA']:.1f} 倍" for dt, r in df_plot.iterrows() if r["Volume"] > 0 and r["VMA"] > 0 and r["Volume"] > r["VMA"] * 2][-5:]
 
         m1, m2, m3, m4 = st.columns(4)
         m1.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>現價 / 漲跌</div><div style='color:{price_color(curr, prev_c)}; font-size:22px; font-weight:bold;'>{curr:.2f} <span style='font-size:16px;'>({diff:+.2f} {pct:+.2f}%)</span></div></div>", unsafe_allow_html=True)
         m2.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>最高 / 最低</div><div style='color:#fff; font-size:22px; font-weight:bold;'><span style='color:#ff3b3b'>{high_val:.2f}</span> <span style='color:#666;'>/</span> <span style='color:#00e676'>{low_val:.2f}</span></div></div>", unsafe_allow_html=True)
         m3.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>今日振幅</div><div style='color:#ffcc00; font-size:22px; font-weight:bold;'>{amp_pct:.2f}%</div></div>", unsafe_allow_html=True)
         m4.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>即時均價 (VWAP)</div><div style='color:#fff; font-size:22px; font-weight:bold;'>{df_plot['VWAP'].iloc[-1]:.2f}</div></div>", unsafe_allow_html=True)
+        
         st.markdown(f"<div class='card' style='margin-top:10px; margin-bottom:15px;'><div style='display:flex; justify-content:space-between; margin-bottom:5px; font-size:15px;'><span style='color:#ff3b3b; font-weight:bold;'>🔥 主動買盤 {buy_pct:.1f}%</span><span style='color:#00e676; font-weight:bold;'>❄️ 主動賣盤 {sell_pct:.1f}%</span></div><div style='height:12px; background:#1a1a1a; border-radius:6px; display:flex; overflow:hidden;'><div style='width:{buy_pct}%; background:#ff3b3b;'></div><div style='width:{sell_pct}%; background:#00e676;'></div></div></div>", unsafe_allow_html=True)
-        if surges: st.markdown(f"<div style='margin-bottom:15px;'>{''.join([f'<span style=\"background:#332b00; border:1px solid #665500; color:#ffcc00; padding:4px 10px; border-radius:5px; margin-right:10px; font-size:14px; font-weight:bold;\">{s}</span>' for s in surges])}</div>", unsafe_allow_html=True)
+        
+        if surges:
+            st.markdown(f"<div style='margin-bottom:15px;'>{''.join([f'<span style=\"background:#332b00; border:1px solid #665500; color:#ffcc00; padding:4px 10px; border-radius:5px; margin-right:10px; font-size:14px; font-weight:bold;\">{s}</span>' for s in surges])}</div>", unsafe_allow_html=True)
 
-        cdata = [[r['Volume'], ((r['Close']-prev_c)/prev_c*100) if prev_c else 0] for _, r in df_plot.iterrows()]
+        cdata = [[r["Volume"], ((r["Close"] - prev_c) / prev_c * 100) if prev_c else 0] for _, r in df_plot.iterrows()]
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.02)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Close"], mode="lines", name="即價", line=dict(color="yellow", width=2.5), customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>價格:</b> %{y:.2f}<br><b>漲跌:</b> %{customdata[1]:+.2f}%<br><b>量:</b> %{customdata[0]:,.0f}<extra></extra>"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["VWAP"], mode="lines", name="均價", line=dict(color="white", width=1.5, dash="dot"), hoverinfo="skip"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_plot.index, y=[prev_c]*len(df_plot), mode="lines", name="昨收", line=dict(color="#777", dash="dash"), hoverinfo="skip"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=[prev_c] * len(df_plot), mode="lines", name="昨收", line=dict(color="#777", dash="dash"), hoverinfo="skip"), row=1, col=1)
         fig.add_trace(go.Bar(x=df_plot.index, y=df_plot["Volume"], name="分量", marker_color=v_colors, customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>量:</b> %{y:,.0f}<extra></extra>"), row=2, col=1)
         today = df_plot.index[-1].date()
         fig.update_xaxes(range=[pd.Timestamp(f"{today} 09:00", tz="Asia/Taipei"), pd.Timestamp(f"{today} 13:30", tz="Asia/Taipei")], tickformat="%H:%M")
@@ -389,86 +515,102 @@ elif page == "⚡ 即時趨勢":
         fig.update_xaxes(gridcolor="#111", showspikes=True, spikemode="across", spikesnap="cursor", showline=False, spikedash="solid")
         fig.update_yaxes(side="right", gridcolor="#111")
         st.plotly_chart(fig, use_container_width=True)
-    else: st.warning("⚠️ 無盤中資料")
+    else:
+        st.warning("⚠️ 無盤中資料")
 
 # =====================
 # 🤖 AI綜合預測
 # =====================
 elif page == "🤖 AI綜合預測":
     st.markdown(f"## 🤖 {display_name} AI 綜合預測中心")
-    ts, ids, cs, fs, buy_pct, sell_pct = 0, 0, 0, 0, 0.5, 0.5
+    ts, ids, cs, fs = 50, 50, 50, 50
+    buy_pct, sell_pct = 0.5, 0.5
+    
     try:
         if len(df) >= 20:
-            ma5, ma20, h20, vma20, vc = df['Close'].rolling(5).mean().iloc[-1], df['Close'].rolling(20).mean().iloc[-1], df['High'].rolling(20).max().iloc[-1], df['Volume'].rolling(20).mean().iloc[-1], df['Volume'].iloc[-1]
+            ma5 = df["Close"].rolling(5).mean().iloc[-1]
+            ma20 = df["Close"].rolling(20).mean().iloc[-1]
+            h20 = df["High"].rolling(20).max().iloc[-1]
+            vma20 = df["Volume"].rolling(20).mean().iloc[-1]
+            vc = df["Volume"].iloc[-1]
+            ts = 0
             if curr > ma5: ts += 10
             if curr > ma20: ts += 20
             if curr >= h20 * 0.99: ts += 25
             if vc > vma20: ts += 20
             if curr >= open_p: ts += 10
-            if curr > prev_c and vc > df['Volume'].iloc[-2]: ts += 15
-        else: ts = 50
-    except: ts = 50
+            if curr > prev_c and vc > df["Volume"].iloc[-2]: ts += 15
+    except Exception: pass
     ts = max(0, min(100, ts))
 
     try:
         if not df_i_for_summary.empty:
             df_i = df_i_for_summary.copy()
-            vwap = (df_i['Close'] * df_i['Volume']).sum() / df_i['Volume'].sum() if df_i['Volume'].sum() > 0 else curr
-            hd, ld = max(df_i['High'].max(), curr), min(df_i['Low'].min(), curr)
+            vwap = (df_i["Close"] * df_i["Volume"]).sum() / df_i["Volume"].sum() if df_i["Volume"].sum() > 0 else curr
+            hd, ld = max(df_i["High"].max(), curr), min(df_i["Low"].min(), curr)
             amp = (hd - ld) / ld if ld > 0 else 0
             bv, pc = 0, prev_c
             for _, r in df_i.iterrows():
-                if r['Close'] >= pc: bv += r['Volume']
-                pc = r['Close']
-            tv = df_i['Volume'].sum()
-            if tv > 0: buy_pct = bv / tv; sell_pct = 1 - buy_pct
+                if r["Close"] >= pc: bv += r["Volume"]
+                pc = r["Close"]
+            tv = df_i["Volume"].sum()
+            if tv > 0:
+                buy_pct = bv / tv
+                sell_pct = 1 - buy_pct
+            
+            ids = 0
             if curr > vwap: ids += 20
             if buy_pct > 0.6: ids += 25
-            if len(df) >= 20 and df_i['Volume'].max() > df['Volume'].rolling(20).mean().iloc[-1] / 270 * 2: ids += 20
-            if hd > 0 and (hd - curr)/hd < 0.01: ids += 15
+            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2: ids += 20
+            if hd > 0 and (hd - curr) / hd < 0.01: ids += 15
             if amp > 0.03: ids += 10
-        else: ids = 50
-    except: ids = 50
+    except Exception: pass
     ids = max(0, min(100, ids))
 
     try:
         if bids and asks:
-            bv, av = sum(x.get('size', 0) for x in bids), sum(x.get('size', 0) for x in asks)
+            bv = sum(x.get("size", 0) for x in bids)
+            av = sum(x.get("size", 0) for x in asks)
             tba = bv + av
+            cs = 0
             if bv > av: cs += 20
-            if tba > 0 and (bv - av)/tba > 0.2: cs += 20
-            if bids and bids[0].get('size',0) > 100: cs += 20
+            if tba > 0 and (bv - av) / tba > 0.2: cs += 20
+            if bids and bids[0].get("size", 0) > 100: cs += 20
             if bv > av * 1.5: cs += 20
-            cs += 20 
-        else: cs = 50
-    except: cs = 50
+            cs += 20
+    except Exception: pass
     cs = max(0, min(100, cs))
 
     try:
         info, _ = fetch_fundamentals(symbol, suffix)
         if info:
-            e, r, d, p, g = info.get('trailingEps'), info.get('returnOnEquity'), info.get('dividendYield'), info.get('trailingPE'), info.get('revenueGrowth')
+            e = info.get("trailingEps")
+            r = info.get("returnOnEquity")
+            d = info.get("dividendYield")
+            p = info.get("trailingPE")
+            g = info.get("revenueGrowth")
+            fs = 0
             if e and e > 10: fs += 20
             if r and r > 0.15: fs += 20
             if d and d > 0.05: fs += 20
             if p and 0 < p < 20: fs += 20
             if g and g > 0: fs += 20
-        else: fs = 50
-    except: fs = 50
+    except Exception: pass
     fs = max(0, min(100, fs))
 
-    tot = ts*0.3 + ids*0.25 + cs*0.2 + fs*0.25
-    tg, tc = ("🚀 強勢多方", "#ff3b3b") if tot>=85 else ("📈 偏多", "#ff9900") if tot>=70 else ("🟡 中性偏多", "#ffcc00") if tot>=55 else ("⚖️ 震盪", "#aaaaaa") if tot>=45 else ("📉 偏空", "#00e676") if tot>=30 else ("❄️ 弱勢", "#009900")
+    tot = ts * 0.3 + ids * 0.25 + cs * 0.2 + fs * 0.25
+    tg, tc = ("🚀 強勢多方", "#ff3b3b") if tot >= 85 else ("📈 偏多", "#ff9900") if tot >= 70 else ("🟡 中性偏多", "#ffcc00") if tot >= 55 else ("⚖️ 震盪", "#aaaaaa") if tot >= 45 else ("📉 偏空", "#00e676") if tot >= 30 else ("❄️ 弱勢", "#009900")
 
     t1, t2, t3 = st.columns([3, 4, 3])
-    with t1: st.plotly_chart(donut_chart("🤖 綜合評分", tot, tg, tc), use_container_width=True)
+    with t1:
+        st.plotly_chart(donut_chart("🤖 綜合評分", tot, tg, tc), use_container_width=True)
     with t2:
-        fig_r = go.Figure(go.Scatterpolar(r=[ts, ids, cs, fs, ts], theta=['技術面', '即時盤中', '籌碼五檔', '基本面', '技術面'], fill='toself', line_color='#00e5ff', fillcolor='rgba(0, 229, 255, 0.3)'))
+        fig_r = go.Figure(go.Scatterpolar(r=[ts, ids, cs, fs, ts], theta=["技術面", "即時盤中", "籌碼五檔", "基本面", "技術面"], fill="toself", line_color="#00e5ff", fillcolor="rgba(0, 229, 255, 0.3)"))
         fig_r.update_layout(template="plotly_dark", height=280, margin=dict(l=30, r=30, t=30, b=30), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#333"), angularaxis=dict(gridcolor="#333")))
         st.plotly_chart(fig_r, use_container_width=True)
     with t3:
-        fig_b = go.Figure(go.Bar(x=[ts, ids, cs, fs], y=['技術', '盤中', '籌碼', '基本'], orientation='h', marker_color=['#ffcc00', '#00e676', '#ff3b3b', '#aa00ff'], text=[f"{ts:.0f}", f"{ids:.0f}", f"{cs:.0f}", f"{fs:.0f}"], textposition='auto'))
-        fig_b.update_layout(template="plotly_dark", height=280, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(range=[0,100], gridcolor="#333"))
+        fig_b = go.Figure(go.Bar(x=[ts, ids, cs, fs], y=["技術", "盤中", "籌碼", "基本"], orientation="h", marker_color=["#ffcc00", "#00e676", "#ff3b3b", "#aa00ff"], text=[f"{ts:.0f}", f"{ids:.0f}", f"{cs:.0f}", f"{fs:.0f}"], textposition="auto"))
+        fig_b.update_layout(template="plotly_dark", height=280, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(range=[0, 100], gridcolor="#333"))
         st.plotly_chart(fig_b, use_container_width=True)
 
     st.markdown("---")
@@ -485,7 +627,6 @@ elif page == "🤖 AI綜合預測":
     txt_c = f"籌碼與掛單分析顯示，目前籌碼健康度達 {cs:.0f} 分。最佳五檔的委買委賣力道懸殊，反映了造市者與散戶的預期。當大單敲進或倒出時，即時明細揭露了主力吃貨或出貨的痕跡。買賣報價的滑價空間顯示流動性是否充足。後續需追蹤主力籌碼是否具備延續性。"
     txt_f = f"基本面價值評估獲得 {fs:.0f} 分。公司的獲利數據直接反映其長期營運能力與股東資本回報率。配合目前的本益比與股價淨值比區間，可判斷當前股價是否具備估值優勢。近期營收的成長率是支撐股價上行的重要催化劑。高股息殖利率亦能為股價提供防禦保護。"
     txt_all = f"綜合四大面向模型，目前標的總評分為 **{tot:.1f}** 分，系統判定為「**{tg}**」。偏多底氣主要來自於資金動能的匯聚與技術關卡的突破；偏空風險則潛藏於短線過熱或基本面估值過高的疑慮之中。短線操作建議以 VWAP 作為當沖多空分水嶺，中長線投資人則應緊盯即將公布的營收與財報數據。主力大戶的籌碼堆疊方向，預示著未來的潛在走勢。<br><br><span style='color:#ff3b3b;'>⚠️ 本分析模型基於量化數據自動生成，僅供觀察參考，不構成任何買賣建議。</span>"
-
     st.markdown(f"<div style='display:grid; grid-template-columns: 1fr 1fr; gap: 20px;'><div class='card'><h4>📈 技術與盤中動能</h4><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>技術面：</b>{txt_t}</p><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>即時盤中：</b>{txt_i}</p></div><div class='card'><h4>💼 籌碼與基本面價值</h4><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>籌碼五檔：</b>{txt_c}</p><p style='color:#ccc; font-size:15px; line-height:1.6;'><b>基本面：</b>{txt_f}</p></div></div><div class='card' style='margin-top:20px; border:1px solid #555; background:#151515;'><h3 style='color:#ffcc00; margin-bottom:10px;'>🎯 AI 綜合總結建議</h3><p style='color:#eee; font-size:16px; line-height:1.8;'>{txt_all}</p></div>", unsafe_allow_html=True)
 
 # =====================
@@ -494,85 +635,126 @@ elif page == "🤖 AI綜合預測":
 elif page == "📑 基本面分析":
     st.markdown(f"## 📑 {display_name} 基本面分析")
     info, fin_data = fetch_fundamentals(symbol, suffix)
-    rev_df = fetch_monthly_revenue(symbol)
-    
-    def safe_get(key, default="N/A"): return info.get(key, default) if info.get(key) is not None else default
+    rev_df = fetch_monthly_revenue(symbol, FINMIND_TOKEN)
+
+    def safe_get(key, default="N/A"):
+        return info.get(key, default) if info.get(key) is not None else default
+
     def fmt_pct_ratio(val):
-        if val=="N/A" or pd.isna(val): return "N/A"
-        try: v=float(val); return f"{v:.2f}%" if abs(v)>1 else f"{v*100:.2f}%"
-        except: return "N/A"
+        if val == "N/A" or pd.isna(val): return "N/A"
+        try:
+            v = float(val)
+            return f"{v:.2f}%" if abs(v) > 1 else f"{v*100:.2f}%"
+        except Exception: return "N/A"
+
     def norm_rat(val):
-        if val=="N/A" or pd.isna(val): return None
-        try: v=float(val); return v/100 if abs(v)>1 else v
-        except: return None
-    def fmt_flt(val, dec=2): return f"{float(val):.{dec}f}" if val!="N/A" and not pd.isna(val) else "N/A"
+        if val == "N/A" or pd.isna(val): return None
+        try:
+            v = float(val)
+            return v/100 if abs(v) > 1 else v
+        except Exception: return None
+
+    def fmt_flt(val, dec=2):
+        if val == "N/A" or pd.isna(val): return "N/A"
+        try: return f"{float(val):.{dec}f}"
+        except Exception: return "N/A"
+
     def fmt_curr(val):
-        if val=="N/A" or pd.isna(val): return "N/A"
-        try: v=float(val); return f"{v/1e12:.2f} 兆" if abs(v)>=1e12 else f"{v/1e8:.2f} 億" if abs(v)>=1e8 else f"{v/1e4:.2f} 萬" if abs(v)>=1e4 else f"{v:,.0f}"
-        except: return "N/A"
-    def fmt_date(val): return datetime.fromtimestamp(val).strftime('%Y-%m-%d') if val!="N/A" and not pd.isna(val) else "N/A"
+        if val == "N/A" or pd.isna(val): return "N/A"
+        try:
+            v = float(val)
+            return f"{v/1e12:.2f} 兆" if abs(v) >= 1e12 else f"{v/1e8:.2f} 億" if abs(v) >= 1e8 else f"{v/1e4:.2f} 萬" if abs(v) >= 1e4 else f"{v:,.0f}"
+        except Exception: return "N/A"
+
+    def fmt_date(val):
+        if val == "N/A" or pd.isna(val): return "N/A"
+        try: return datetime.fromtimestamp(val).strftime("%Y-%m-%d")
+        except Exception: return "N/A"
 
     sector = INDUSTRY_BACKUP.get(symbol, safe_get("sector"))
-    mc, emp, cty, cur = safe_get("marketCap", 0), safe_get("fullTimeEmployees"), safe_get("country"), safe_get("currency")
-    eps, pe, pb, roe, dy = safe_get("trailingEps", 0), safe_get("trailingPE", 0), safe_get("priceToBook", 0), safe_get("returnOnEquity", 0), safe_get("dividendYield", 0)
-    
+    mc = safe_get("marketCap", 0)
+    emp = safe_get("fullTimeEmployees")
+    cty = safe_get("country")
+    cur = safe_get("currency")
+    eps = safe_get("trailingEps", 0)
+    pe = safe_get("trailingPE", 0)
+    pb = safe_get("priceToBook", 0)
+    roe = safe_get("returnOnEquity", 0)
+    dy = safe_get("dividendYield", 0)
+
+    eps_str = fmt_flt(eps)
+    pe_str = fmt_flt(pe)
+    pb_str = fmt_flt(pb)
+    roe_str = fmt_pct_ratio(roe)
+    div_str = fmt_pct_ratio(dy)
+    mc_str = fmt_curr(mc)
+
+    roe_norm = norm_rat(roe)
+    div_yield_norm = norm_rat(dy)
+
     i1, i2, i3, i4 = st.columns(4)
     i1.markdown(f"<div class='card'><div style='color:#aaa;'>產業板塊</div><div style='font-size:20px; font-weight:bold; color:#fff;'>{sector}</div></div>", unsafe_allow_html=True)
-    i2.markdown(f"<div class='card'><div style='color:#aaa;'>公司市值</div><div style='font-size:20px; font-weight:bold; color:#ffcc00;'>{fmt_curr(mc)}</div></div>", unsafe_allow_html=True)
+    i2.markdown(f"<div class='card'><div style='color:#aaa;'>公司市值</div><div style='font-size:20px; font-weight:bold; color:#ffcc00;'>{mc_str}</div></div>", unsafe_allow_html=True)
     i3.markdown(f"<div class='card'><div style='color:#aaa;'>員工總數</div><div style='font-size:20px; font-weight:bold; color:#fff;'>{emp}</div></div>", unsafe_allow_html=True)
     i4.markdown(f"<div class='card'><div style='color:#aaa;'>國家/幣別</div><div style='font-size:20px; font-weight:bold; color:#fff;'>{cty} / {cur}</div></div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>EPS(近四季)</div><div style='font-size:22px; font-weight:bold; color:#ff3b3b;'>{fmt_flt(eps)}</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>PER</div><div style='font-size:22px; font-weight:bold; color:#00e676;'>{fmt_flt(pe)}</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>PBR</div><div style='font-size:22px; font-weight:bold; color:#00e676;'>{fmt_flt(pb)}</div></div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>ROE</div><div style='font-size:22px; font-weight:bold; color:#ffcc00;'>{fmt_pct_ratio(roe)}</div></div>", unsafe_allow_html=True)
-    c5.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>殖利率</div><div style='font-size:22px; font-weight:bold; color:#ff3b3b;'>{fmt_pct_ratio(dy)}</div></div>", unsafe_allow_html=True)
-    c6.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>市值規模</div><div style='font-size:22px; font-weight:bold; color:#fff;'>{fmt_curr(mc)}</div></div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>EPS (近四季)</div><div style='font-size:22px; font-weight:bold; color:#ff3b3b;'>{eps_str}</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>本益比 (PER)</div><div style='font-size:22px; font-weight:bold; color:#00e676;'>{pe_str}</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>股價淨值比 (PBR)</div><div style='font-size:22px; font-weight:bold; color:#00e676;'>{pb_str}</div></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>股東權益報酬 (ROE)</div><div style='font-size:22px; font-weight:bold; color:#ffcc00;'>{roe_str}</div></div>", unsafe_allow_html=True)
+    c5.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>殖利率</div><div style='font-size:22px; font-weight:bold; color:#ff3b3b;'>{div_str}</div></div>", unsafe_allow_html=True)
+    c6.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>市值規模</div><div style='font-size:22px; font-weight:bold; color:#fff;'>{mc_str}</div></div>", unsafe_allow_html=True)
 
-    rn, dyn, sc = norm_rat(roe), norm_rat(dy), 0
-    if eps!="N/A" and eps>0: sc += 20 if eps>10 else 10 if eps>5 else 0
-    if rn is not None and rn>0: sc += 20 if rn>0.15 else 10 if rn>0.1 else 0
-    if dyn is not None and dyn>0: sc += 20 if dyn>0.05 else 10 if dyn>0.03 else 0
-    if pe!="N/A" and pe>0: sc += 20 if pe<15 else 10 if pe<25 else 0
-    if pb!="N/A" and pb>0: sc += 20 if pb<2 else 10 if pb<4 else 0
-    sc = max(0, min(100, sc))
+    score = 0
+    if eps != "N/A" and eps > 0: score += 20 if eps > 10 else 10 if eps > 5 else 0
+    if roe_norm is not None and roe_norm > 0: score += 20 if roe_norm > 0.15 else 10 if roe_norm > 0.1 else 0
+    if div_yield_norm is not None and div_yield_norm > 0: score += 20 if div_yield_norm > 0.05 else 10 if div_yield_norm > 0.03 else 0
+    if pe != "N/A" and pe > 0: score += 20 if pe < 15 else 10 if pe < 25 else 0
+    if pb != "N/A" and pb > 0: score += 20 if pb < 2 else 10 if pb < 4 else 0
+    score = max(0, min(100, score))
 
-    stg, scl = ("🔥 極度優秀","#ff3b3b") if sc>=90 else ("✅ 基本面強勁","#ff9900") if sc>=75 else ("👍 穩健型公司","#ffcc00") if sc>=60 else ("⚠️ 普通","#aaaaaa") if sc>=40 else ("❄️ 基本面偏弱","#00e676")
-    ais = "公司具備優異獲利能力(ROE高)，" if rn and rn>0.15 else "公司獲利尚可，" if rn and rn>0 else "目前獲利偏弱，"
-    ais += "具高殖利率防禦保護。" if dyn and dyn>0.05 else "偏向不發高息之資本策略。"
-    ais += ("<br>本益比偏低，具潛在價值。" if pe!="N/A" and 0<pe<15 else "<br>本益比較高，偏向成長型評價。" if pe!="N/A" and pe>25 else "<br>估值處合理區間。" if pe!="N/A" and pe>0 else "<br>無有效PER參考。")
+    stg, scl = ("🔥 極度優秀", "#ff3b3b") if score >= 90 else ("✅ 基本面強勁", "#ff9900") if score >= 75 else ("👍 穩健型公司", "#ffcc00") if score >= 60 else ("⚠️ 普通", "#aaaaaa") if score >= 40 else ("❄️ 基本面偏弱", "#00e676")
+    ais = "公司具備優異獲利能力(ROE高)，" if roe_norm and roe_norm > 0.15 else "公司獲利尚可，" if roe_norm and roe_norm > 0 else "目前獲利偏弱，"
+    ais += "具高殖利率防禦保護。" if div_yield_norm and div_yield_norm > 0.05 else "偏向不發高息之資本策略。"
+    ais += ("<br>本益比偏低，具潛在價值。" if pe != "N/A" and 0 < pe < 15 else "<br>本益比較高，偏向成長型評價。" if pe != "N/A" and pe > 25 else "<br>估值處合理區間。" if pe != "N/A" and pe > 0 else "<br>無有效PER參考。")
 
     st.markdown("---")
     s1, s2 = st.columns([3, 7])
-    with s1: st.plotly_chart(donut_chart("🤖 AI 評分", sc, stg, scl), use_container_width=True)
+    with s1: st.plotly_chart(donut_chart("🤖 AI 評分", score, stg, scl), use_container_width=True)
     with s2: st.markdown(f"<div class='card' style='height:260px; display:flex; align-items:center; padding:30px;'><h3 style='color:#fff; line-height:1.6;'>{ais}</h3></div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("### 📅 每月營收")
-    if rev_df.empty: st.info("📡 暫無營收資料")
+    if not FINMIND_TOKEN:
+        st.warning("⚠️ 未設定 FINMIND_TOKEN，請設定 Streamlit Secrets 或 finmind_token.txt。")
+    elif rev_df.empty:
+        st.info("📡 暫無營收資料")
     else:
         cr1, cr2 = st.columns([4, 6])
         with cr1:
-            h = "<div style='overflow-x:auto; max-height:400px; border-radius:12px; border:1px solid #222;'><table class='fin-table'><thead style='position:sticky; top:0; z-index:2;'><tr><th>月份</th><th style='text-align:right'>營收(億)</th><th style='text-align:right'>MoM</th><th style='text-align:right'>YoY</th></tr></thead><tbody>"
+            h = "<div style='overflow-x:auto; max-height:400px; border-radius:12px; border:1px solid #222;'><table class='fin-table'><thead style='position:sticky; top:0; z-index:2; background:#222;'><tr><th style='padding:10px; color:#fff;'>月份</th><th style='text-align:right; padding:10px; color:#fff;'>營收(億)</th><th style='text-align:right; padding:10px; color:#fff;'>月增率</th><th style='text-align:right; padding:10px; color:#fff;'>年增率</th></tr></thead><tbody>"
             for _, r in rev_df.iterrows():
                 m, rv, mom, yoy = r["月份"], r["營收（億元台幣）"], r["月增率 MoM"], r["年增率 YoY"]
-                h += f"<tr><td>{m}</td><td style='text-align:right'>{rv:.2f}</td><td style='text-align:right; color: {'#ff3b3b' if mom>0 else '#00e676' if mom<0 else '#fff'};'>{mom:+.2f}%</td><td style='text-align:right; color: {'#ff3b3b' if yoy>0 else '#00e676' if yoy<0 else '#fff'};'>{yoy:+.2f}%</td></tr>"
-            st.markdown(h+"</tbody></table></div>", unsafe_allow_html=True)
+                h += f"<tr><td>{m}</td><td style='text-align:right'>{rv:.2f}</td><td style='text-align:right; color: {'#ff3b3b' if mom > 0 else '#00e676' if mom < 0 else '#fff'};'>{mom:+.2f}%</td><td style='text-align:right; color: {'#ff3b3b' if yoy > 0 else '#00e676' if yoy < 0 else '#fff'};'>{yoy:+.2f}%</td></tr>"
+            st.markdown(h + "</tbody></table></div>", unsafe_allow_html=True)
         with cr2:
-            d_c = rev_df.iloc[::-1]
+            d_c = rev_df.iloc[::-1].copy()
             fr = make_subplots(specs=[[{"secondary_y": True}]])
-            fr.add_trace(go.Bar(x=d_c['月份'], y=d_c['營收（億元台幣）'], name="營收(億)", marker_color="#00e5ff"), secondary_y=False)
-            fr.add_trace(go.Scatter(x=d_c['月份'], y=d_c['年增率 YoY'], name="YoY(%)", line=dict(color="#ff3b3b", width=2)), secondary_y=True)
+            fr.add_trace(go.Bar(x=d_c["月份"], y=d_c["營收（億元台幣）"], name="營收(億)", marker_color="#00e5ff"), secondary_y=False)
+            fr.add_trace(go.Scatter(x=d_c["月份"], y=d_c["年增率 YoY"], name="年增率(%)", line=dict(color="#ff3b3b", width=2)), secondary_y=True)
             fr.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="#000", plot_bgcolor="#000", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fr.update_xaxes(gridcolor="#111", type="category")
+            fr.update_yaxes(title_text="營收(億元台幣)", gridcolor="#111", secondary_y=False)
+            fr.update_yaxes(title_text="年增率(%)", showgrid=False, secondary_y=True)
             st.plotly_chart(fr, use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 📋 基本面詳細表格")
-    dte_str = f"{fmt_flt(safe_get('debtToEquity'))}%" if safe_get('debtToEquity')!="N/A" else "N/A"
+    dte_str = f"{fmt_flt(safe_get('debtToEquity'))}%" if safe_get("debtToEquity") != "N/A" else "N/A"
     th = (
-        "<div style='overflow-x:auto; max-height:700px; border-radius:12px; border:1px solid #222;'><table class='fin-table'><thead style='position:sticky; top:0; z-index:2;'>"
-        "<tr><th>分類</th><th>指標</th><th>數值</th><th>解讀</th></tr></thead><tbody>"
+        "<div style='overflow-x:auto; max-height:700px; border-radius:12px; border:1px solid #222;'><table class='fin-table'><thead style='position:sticky; top:0; z-index:2; background:#222;'>"
+        "<tr><th style='padding:10px; color:#fff;'>分類</th><th style='padding:10px; color:#fff;'>指標</th><th style='padding:10px; color:#fff;'>數值</th><th style='padding:10px; color:#fff;'>解讀</th></tr></thead><tbody>"
         f"<tr><td rowspan='5' style='color:#ffcc00; font-weight:bold;'>💰 獲利能力</td><td>毛利率</td><td>{fmt_pct_ratio(safe_get('grossMargins'))}</td><td>產品附加價值</td></tr>"
         f"<tr><td>營益率</td><td>{fmt_pct_ratio(safe_get('operatingMargins'))}</td><td>本業獲利能力</td></tr>"
         f"<tr><td>淨利率</td><td>{fmt_pct_ratio(safe_get('profitMargins'))}</td><td>最終獲利能力</td></tr>"
@@ -604,26 +786,49 @@ elif page == "📑 基本面分析":
     if not fin_data.empty:
         ff = make_subplots(specs=[[{"secondary_y": True}]])
         hp = False
-        if 'Total Revenue' in fin_data.columns: ff.add_trace(go.Bar(x=fin_data.index, y=fin_data['Total Revenue']/1e8, name="營收(億)", marker_color="rgba(255,204,0,0.7)"), secondary_y=False); hp=True
-        elif 'Operating Revenue' in fin_data.columns: ff.add_trace(go.Bar(x=fin_data.index, y=fin_data['Operating Revenue']/1e8, name="營業收入(億)", marker_color="rgba(255,204,0,0.7)"), secondary_y=False); hp=True
-        if 'Net Income' in fin_data.columns: ff.add_trace(go.Scatter(x=fin_data.index, y=fin_data['Net Income']/1e8, name="淨利(億)", line=dict(color="#ff3b3b", width=3)), secondary_y=False); hp=True
-        if 'Basic EPS' in fin_data.columns: ff.add_trace(go.Scatter(x=fin_data.index, y=fin_data['Basic EPS'], name="EPS", line=dict(color="#fff", width=2, dash="dot")), secondary_y=True); hp=True
+        if "Total Revenue" in fin_data.columns:
+            ff.add_trace(go.Bar(x=fin_data.index, y=fin_data["Total Revenue"] / 1e8, name="營收(億)", marker_color="rgba(255,204,0,0.7)"), secondary_y=False)
+            hp = True
+        elif "Operating Revenue" in fin_data.columns:
+            ff.add_trace(go.Bar(x=fin_data.index, y=fin_data["Operating Revenue"] / 1e8, name="營業收入(億)", marker_color="rgba(255,204,0,0.7)"), secondary_y=False)
+            hp = True
+        if "Net Income" in fin_data.columns:
+            ff.add_trace(go.Scatter(x=fin_data.index, y=fin_data["Net Income"] / 1e8, name="淨利(億)", line=dict(color="#ff3b3b", width=3)), secondary_y=False)
+            hp = True
+        if "Basic EPS" in fin_data.columns:
+            ff.add_trace(go.Scatter(x=fin_data.index, y=fin_data["Basic EPS"], name="EPS", line=dict(color="#fff", width=2, dash="dot")), secondary_y=True)
+            hp = True
         if hp:
             ff.update_layout(template="plotly_dark", height=500, margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="#000", plot_bgcolor="#000")
-            ff.update_xaxes(type='category')
+            ff.update_xaxes(type="category")
             ff.update_yaxes(title_text="金額(億元台幣)", secondary_y=False)
             st.plotly_chart(ff, use_container_width=True)
-        else: st.info("📡 暫無圖表資料")
-    else: st.info("📡 暫無財報趨勢資料")
+        else:
+            st.info("📡 暫無圖表資料")
+    else:
+        st.info("📡 暫無財報趨勢資料")
 
 # =====================
 # 底部資訊 (全頁共用)
 # =====================
 st.markdown("---")
 b1, b2 = st.columns([4, 6])
+
 with b1:
     pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
-    st.markdown(f"<div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'><h3>💰 庫存狀態</h3><p style='color:#aaa;'>{display_name}</p><p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p><p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span></p><h3>📊 總盈虧</h3><div style='font-size:42px; font-weight:bold; color:{pnl_c};'>{int(profit):,} 元</div></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>"
+        f"<h3>💰 庫存狀態</h3>"
+        f"<p style='color:#aaa;'>{display_name}</p>"
+        f"<p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>"
+        f"<p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>"
+        f"現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>"
+        f"</p>"
+        f"<h3>📊 總盈虧</h3>"
+        f"<div style='font-size:42px; font-weight:bold; color:{pnl_c};'>{int(profit):,} 元</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
 if page != "📑 基本面分析":
     with b2:
