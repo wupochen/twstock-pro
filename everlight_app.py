@@ -1,5 +1,6 @@
 # =========================
-# 台股戰情室 Pro 完整版
+# 台股戰情室 Pro 穩定完整版
+# 全台股 / ETF 中文搜尋版
 # =========================
 
 import streamlit as st
@@ -8,8 +9,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
-import os
-from datetime import datetime
 import feedparser
 from urllib.parse import quote
 from streamlit_autorefresh import st_autorefresh
@@ -56,7 +55,7 @@ html, body, [class*="st-"]{
 """, unsafe_allow_html=True)
 
 # =========================
-# 股票名稱字典
+# 全台股名稱資料
 # =========================
 @st.cache_data(ttl=86400)
 def load_market_dict():
@@ -68,7 +67,7 @@ def load_market_dict():
 
         url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 
-        r = requests.get(url_twse, timeout=10)
+        r = requests.get(url_twse, timeout=15)
 
         if r.status_code == 200:
 
@@ -80,6 +79,7 @@ def load_market_dict():
                 name = str(item.get("Name", "")).strip()
 
                 if code and name:
+
                     market_dict[code] = name
                     market_dict[name] = code
 
@@ -91,7 +91,7 @@ def load_market_dict():
 
         url_otc = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
 
-        r2 = requests.get(url_otc, timeout=10)
+        r2 = requests.get(url_otc, timeout=15)
 
         if r2.status_code == 200:
 
@@ -110,25 +110,29 @@ def load_market_dict():
                 ).strip()
 
                 if code and name:
+
                     market_dict[code] = name
                     market_dict[name] = code
 
     except Exception as e:
         print("OTC error:", e)
 
-    # ===== ETF補充 =====
+    # ===== ETF 補充 =====
     etf_extra = {
         "0050":"元大台灣50",
         "0056":"元大高股息",
+        "006208":"富邦台50",
         "00878":"國泰永續高股息",
         "00919":"群益台灣精選高息",
         "00929":"復華台灣科技優息",
-        "006208":"富邦台50",
+        "00940":"元大台灣價值高息",
         "00713":"元大高息低波",
+        "00757":"統一FANG+",
         "00679B":"元大美債20年"
     }
 
     for k, v in etf_extra.items():
+
         market_dict[k] = v
         market_dict[v] = k
 
@@ -141,6 +145,7 @@ MASTER_DICT = load_market_dict()
 # =========================
 c1, c2, c3, c4 = st.columns([2,3,2,2])
 
+# ===== 頁面 =====
 with c1:
 
     page = st.radio(
@@ -149,42 +154,37 @@ with c1:
         horizontal=True
     )
 
+# ===== 股票搜尋 =====
 with c2:
 
-    # ===== 建立搜尋清單 =====
-    stock_options = []
-
-    used = set()
-
-    for k, v in MASTER_DICT.items():
-
-        code = str(k).strip()
-        name = str(v).strip()
-
-        # 只建立「代號 名稱」
-        if (
-            code not in used
-            and (
-                code.isdigit()
-                or code.endswith("B")
-            )
-        ):
-
-            stock_options.append(f"{code} {name}")
-            used.add(code)
-
-    stock_options = sorted(stock_options)
-
-    # ===== 搜尋選單 =====
-    selected_stock = st.selectbox(
-        "🔍 搜尋股票（代號 / 中文）",
-        stock_options,
-        index=0
+    stock_input = st.text_input(
+        "🔍 股票代號 / 中文名稱",
+        value="1711"
     )
 
-    symbol = selected_stock.split(" ")[0]
-    stock_name = selected_stock.split(" ", 1)[1]
+    stock_input = stock_input.strip()
 
+    # ===== 如果輸入存在字典 =====
+    if stock_input in MASTER_DICT:
+
+        # 輸入代號
+        if stock_input.isdigit() or stock_input.endswith("B"):
+
+            symbol = stock_input
+            stock_name = MASTER_DICT.get(symbol, symbol)
+
+        # 輸入中文
+        else:
+
+            symbol = MASTER_DICT.get(stock_input, stock_input)
+            stock_name = stock_input
+
+    else:
+
+        symbol = stock_input
+        stock_name = stock_input
+
+# ===== K線週期 =====
 with c3:
 
     tf_label = st.selectbox(
@@ -218,10 +218,18 @@ with c3:
     with ma3:
         show_ma20 = st.checkbox("20線", True)
 
+# ===== 庫存 =====
 with c4:
 
-    qty = st.number_input("📦 持股張數", value=1.0)
-    cost = st.number_input("💰 平均成本", value=50.0)
+    qty = st.number_input(
+        "📦 持股張數",
+        value=1.0
+    )
+
+    cost = st.number_input(
+        "💰 平均成本",
+        value=50.0
+    )
 
 # =========================
 # 自動刷新
@@ -234,6 +242,7 @@ st_autorefresh(interval=15000, key="refresh")
 def flatten_columns(df):
 
     if not df.empty and isinstance(df.columns, pd.MultiIndex):
+
         df.columns = df.columns.get_level_values(0)
 
     return df
@@ -258,6 +267,7 @@ def fetch_history(symbol, period, interval):
         suffix = ".TW"
 
     except:
+
         df = pd.DataFrame()
         suffix = ".TW"
 
@@ -277,6 +287,7 @@ def fetch_history(symbol, period, interval):
             suffix = ".TWO"
 
         except:
+
             df = pd.DataFrame()
             suffix = ".TW"
 
@@ -285,7 +296,7 @@ def fetch_history(symbol, period, interval):
     return df, suffix
 
 # =========================
-# 盤中資料
+# 即時資料
 # =========================
 @st.cache_data(ttl=10)
 def fetch_intraday(symbol, suffix):
@@ -302,6 +313,7 @@ def fetch_intraday(symbol, suffix):
         )
 
     except:
+
         df_i = pd.DataFrame()
 
     df_i = flatten_columns(df_i)
@@ -320,12 +332,13 @@ def fetch_intraday(symbol, suffix):
     return df_i
 
 # =========================
-# 取得資料
+# 下載資料
 # =========================
 df, suffix = fetch_history(symbol, period, tf)
 
 if df.empty:
-    st.error(f"查無股票資料：{symbol}")
+
+    st.error(f"❌ 查無股票資料：{symbol}")
     st.stop()
 
 curr = float(df["Close"].iloc[-1])
