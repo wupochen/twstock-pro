@@ -87,7 +87,7 @@ with p1:
 with p2:
     cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
 
-st_autorefresh(interval=5000, key="auto_refresh")
+st_autorefresh(interval=15000, key="auto_refresh")
 
 # =====================
 # 工具函式
