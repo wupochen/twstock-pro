@@ -1,6 +1,6 @@
 # =========================
-# 台股戰情室 Pro 穩定完整版
-# 全台股 / ETF 中文搜尋版
+# 台股戰情室 Pro 最終穩定版
+# 全台股 / ETF 中文搜尋完整版
 # =========================
 
 import streamlit as st
@@ -117,7 +117,7 @@ def load_market_dict():
     except Exception as e:
         print("OTC error:", e)
 
-    # ===== ETF 補充 =====
+    # ===== ETF補充 =====
     etf_extra = {
         "0050":"元大台灣50",
         "0056":"元大高股息",
@@ -164,7 +164,7 @@ with c2:
 
     stock_input = stock_input.strip()
 
-    # ===== 如果輸入存在字典 =====
+    # ===== 股票搜尋 =====
     if stock_input in MASTER_DICT:
 
         # 輸入代號
@@ -179,10 +179,14 @@ with c2:
             symbol = MASTER_DICT.get(stock_input, stock_input)
             stock_name = stock_input
 
+    # ===== 找不到 =====
     else:
 
         symbol = stock_input
         stock_name = stock_input
+
+    # ===== 顯示名稱 =====
+    display_name = f"{symbol} {stock_name}"
 
 # ===== K線週期 =====
 with c3:
@@ -367,7 +371,7 @@ def price_color(price, prev):
 # =========================
 if page == "📊 K線分析":
 
-    st.markdown(f"## 📊 {stock_name} ({symbol})")
+    st.markdown(f"## 📊 {display_name}")
 
     fig = make_subplots(
         rows=2,
@@ -489,7 +493,7 @@ if page == "📊 K線分析":
 # =========================
 elif page == "⚡ 即時趨勢":
 
-    st.markdown(f"## ⚡ {stock_name} ({symbol})")
+    st.markdown(f"## ⚡ {display_name}")
 
     df_i = fetch_intraday(symbol, suffix)
 
@@ -565,7 +569,7 @@ elif page == "⚡ 即時趨勢":
 # =========================
 elif page == "📰 AI新聞預測":
 
-    st.markdown(f"## 📰 {stock_name} ({symbol})")
+    st.markdown(f"## 📰 {display_name}")
 
     query = quote(f"{symbol} {stock_name}")
 
@@ -630,7 +634,7 @@ st.markdown(
 
     <h3>💰 庫存狀態</h3>
 
-    <p>{stock_name} ({symbol})</p>
+    <p>{display_name}</p>
 
     <p>
     現價：
