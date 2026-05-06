@@ -99,12 +99,32 @@ def flatten_columns(df):
 
 @st.cache_data(ttl=30)
 def fetch_history(symbol, period, interval):
-    df = yf.download(f"{symbol}.TW", period=period, interval=interval, progress=False)
+    try:
+    df = yf.download(
+        f"{symbol}.TW",
+        period=period,
+        interval=interval,
+        auto_adjust=False,
+        progress=False,
+        threads=False
+    )
     suffix = ".TW"
+except:
+    df = pd.DataFrame()
 
-    if df.empty:
-        df = yf.download(f"{symbol}.TWO", period=period, interval=interval, progress=False)
+if df.empty:
+    try:
+        df = yf.download(
+            f"{symbol}.TWO",
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            threads=False
+        )
         suffix = ".TWO"
+    except:
+        df = pd.DataFrame()
 
     df = flatten_columns(df)
 
