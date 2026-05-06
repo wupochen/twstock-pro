@@ -1,6 +1,6 @@
 # =========================
-# 台股戰情室 Pro 最終穩定版
-# 全台股 / ETF 中文搜尋完整版
+# 台股戰情室 Pro 最穩定完整版
+# 全台股中文 / ETF / 上櫃
 # =========================
 
 import streamlit as st
@@ -55,7 +55,7 @@ html, body, [class*="st-"]{
 """, unsafe_allow_html=True)
 
 # =========================
-# 全台股名稱資料
+# 股票名稱資料
 # =========================
 @st.cache_data(ttl=86400)
 def load_market_dict():
@@ -65,57 +65,64 @@ def load_market_dict():
     # ===== 上市 =====
     try:
 
-        url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+        url = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
 
-        r = requests.get(url_twse, timeout=15)
+        tables = pd.read_html(url)
 
-        if r.status_code == 200:
+        df = tables[0]
 
-            data = r.json()
+        for i in range(len(df)):
 
-            for item in data:
+            try:
 
-                code = str(item.get("Code", "")).strip()
-                name = str(item.get("Name", "")).strip()
+                raw = str(df.iloc[i,0]).strip()
 
-                if code and name:
+                if "　" in raw:
 
-                    market_dict[code] = name
-                    market_dict[name] = code
+                    code = raw.split("　")[0].strip()
+                    name = raw.split("　")[1].strip()
+
+                    if code.isdigit():
+
+                        market_dict[code] = name
+                        market_dict[name] = code
+
+            except:
+                pass
 
     except Exception as e:
-        print("TWSE error:", e)
+        print("上市錯誤:", e)
 
     # ===== 上櫃 =====
     try:
 
-        url_otc = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
+        url_otc = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
 
-        r2 = requests.get(url_otc, timeout=15)
+        tables_otc = pd.read_html(url_otc)
 
-        if r2.status_code == 200:
+        df_otc = tables_otc[0]
 
-            data2 = r2.json()
+        for i in range(len(df_otc)):
 
-            for item in data2:
+            try:
 
-                code = str(
-                    item.get("SecuritiesCompanyCode", "")
-                    or item.get("Code", "")
-                ).strip()
+                raw = str(df_otc.iloc[i,0]).strip()
 
-                name = str(
-                    item.get("CompanyName", "")
-                    or item.get("Name", "")
-                ).strip()
+                if "　" in raw:
 
-                if code and name:
+                    code = raw.split("　")[0].strip()
+                    name = raw.split("　")[1].strip()
 
-                    market_dict[code] = name
-                    market_dict[name] = code
+                    if code.isdigit():
+
+                        market_dict[code] = name
+                        market_dict[name] = code
+
+            except:
+                pass
 
     except Exception as e:
-        print("OTC error:", e)
+        print("上櫃錯誤:", e)
 
     # ===== ETF補充 =====
     etf_extra = {
@@ -164,7 +171,6 @@ with c2:
 
     stock_input = stock_input.strip()
 
-    # ===== 股票搜尋 =====
     if stock_input in MASTER_DICT:
 
         # 輸入代號
@@ -179,13 +185,11 @@ with c2:
             symbol = MASTER_DICT.get(stock_input, stock_input)
             stock_name = stock_input
 
-    # ===== 找不到 =====
     else:
 
         symbol = stock_input
         stock_name = stock_input
 
-    # ===== 顯示名稱 =====
     display_name = f"{symbol} {stock_name}"
 
 # ===== K線週期 =====
@@ -246,7 +250,6 @@ st_autorefresh(interval=15000, key="refresh")
 def flatten_columns(df):
 
     if not df.empty and isinstance(df.columns, pd.MultiIndex):
-
         df.columns = df.columns.get_level_values(0)
 
     return df
@@ -444,19 +447,6 @@ if page == "📊 K線分析":
             col=1
         )
 
-    # ===== 成本線 =====
-    fig.add_trace(
-        go.Scatter(
-            x=df.index,
-            y=[cost]*len(df),
-            mode="lines",
-            line=dict(color="cyan", dash="dash"),
-            name="成本線"
-        ),
-        row=1,
-        col=1
-    )
-
     # ===== 成交量 =====
     vol_colors = [
         "#ff3b3b" if c >= o else "#00e676"
@@ -519,7 +509,6 @@ elif page == "⚡ 即時趨勢":
             col=1
         )
 
-        # ===== 分鐘量紅綠 =====
         vol_colors = []
 
         prev = None
@@ -561,8 +550,6 @@ elif page == "⚡ 即時趨勢":
         fig.update_yaxes(gridcolor="#111")
 
         st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("📌 盤後保留最後交易日資料")
 
 # =========================
 # AI新聞
