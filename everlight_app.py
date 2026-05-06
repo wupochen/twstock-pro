@@ -190,9 +190,52 @@ with c2:
     display_name = f"{symbol} {stock_name}"
 
 with c3:
-    tf_label = st.selectbox("📈 K線週期", ["日K", "週K", "月K"])
-    tf, period = {"日K":"1d", "週K":"1wk", "月K":"1mo"}[tf_label], {"日K":"6mo", "週K":"2y", "月K":"5y"}[tf_label]
-    time_unit = {"日K":"日線", "週K":"週線", "月K":"月線"}[tf_label]
+    tf_label = st.selectbox(
+        "📈 K線週期",
+        ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
+        index=6
+    )
+
+    tf_map = {
+        "1分K": "1m",
+        "3分K": "3m_custom",
+        "5分K": "5m",
+        "15分K": "15m",
+        "30分K": "30m",
+        "60分K": "60m",
+        "日K": "1d",
+        "週K": "1wk",
+        "月K": "1mo",
+    }
+
+    period_map = {
+        "1分K": "5d",
+        "3分K": "5d",
+        "5分K": "60d",
+        "15分K": "60d",
+        "30分K": "60d",
+        "60分K": "730d",
+        "日K": "1y",
+        "週K": "5y",
+        "月K": "10y",
+    }
+
+    time_unit_map = {
+        "1分K": "1分線",
+        "3分K": "3分線",
+        "5分K": "5分線",
+        "15分K": "15分線",
+        "30分K": "30分線",
+        "60分K": "60分線",
+        "日K": "日線",
+        "週K": "週線",
+        "月K": "月線",
+    }
+
+    tf = tf_map[tf_label]
+    period = period_map[tf_label]
+    time_unit = time_unit_map[tf_label]
+
     ma1, ma2, ma3 = st.columns(3)
     with ma1:
         show_ma5 = st.checkbox("5線", True)
@@ -230,13 +273,61 @@ def flatten_columns(df):
 
 @st.cache_data(ttl=30)
 def fetch_history(symbol, period, interval):
-    df = flatten_columns(yf.download(f"{symbol}.TW", period=period, interval=interval, progress=False, threads=False, auto_adjust=False))
+    download_interval = "1m" if interval == "3m_custom" else interval
+
+    df = flatten_columns(
+        yf.download(
+            f"{symbol}.TW",
+            period=period,
+            interval=download_interval,
+            progress=False,
+            threads=False,
+            auto_adjust=False
+        )
+    )
     suffix = ".TW"
+
     if df.empty:
-        df = flatten_columns(yf.download(f"{symbol}.TWO", period=period, interval=interval, progress=False, threads=False, auto_adjust=False))
+        df = flatten_columns(
+            yf.download(
+                f"{symbol}.TWO",
+                period=period,
+                interval=download_interval,
+                progress=False,
+                threads=False,
+                auto_adjust=False
+            )
+        )
         suffix = ".TWO"
-    if not df.empty:
-        df = df.dropna(subset=["Open", "High", "Low", "Close"]).tail(80)
+
+    if df.empty:
+        return df, suffix
+
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    # 3分K：用 1分K 重新合成
+    if interval == "3m_custom":
+        agg = {
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum",
+        }
+
+        if "Adj Close" in df.columns:
+            agg["Adj Close"] = "last"
+
+        df = df.resample("3min").agg(agg)
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    minute_intervals = ["1m", "3m_custom", "5m", "15m", "30m", "60m"]
+
+    if interval in minute_intervals:
+        df = df.tail(300)
+    else:
+        df = df.tail(500)
+
     return df, suffix
 
 @st.cache_data(ttl=10)
@@ -674,24 +765,186 @@ df_i_for_summary = fetch_intraday(symbol, suffix)
 # =====================
 if page == "📊 K線分析":
     st.markdown(f"## 📊 {display_name}")
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.02)
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
+
+    # 移除多餘的 K線週期選單，僅保留顯示範圍與技術指標選單
+    k_col1, k_col2 = st.columns(2)
+    with k_col1:
+        k_range = st.selectbox(
+            "📏 K線顯示範圍",
+            [f"還原{time_unit}", "最近50根", "最近100根", "最近150根", "最近200根", "最近300根"]
+        )
+    with k_col2:
+        tech_inds = st.multiselect("📈 技術指標", ["KD", "MACD", "RSI", "布林通道"])
+
+    # 預先計算指標（在原本的 df 上計算，確保均線、EMA 與 RSI 等指標數值連續且精準）
+    df_calc = df.copy()
+
+    # 先算好均線，避免切片後前段出現 NaN
+    df_calc['MA5'] = df_calc['Close'].rolling(5).mean()
+    df_calc['MA10'] = df_calc['Close'].rolling(10).mean()
+    df_calc['MA20'] = df_calc['Close'].rolling(20).mean()
+
+    # 計算 KD
+    df_calc['9H'] = df_calc['High'].rolling(9).max()
+    df_calc['9L'] = df_calc['Low'].rolling(9).min()
+    df_calc['RSV'] = (df_calc['Close'] - df_calc['9L']) / (df_calc['9H'] - df_calc['9L']) * 100
+    df_calc['K'] = df_calc['RSV'].ewm(com=2, adjust=False).mean()
+    df_calc['D'] = df_calc['K'].ewm(com=2, adjust=False).mean()
+
+    # 計算 MACD
+    df_calc['EMA12'] = df_calc['Close'].ewm(span=12, adjust=False).mean()
+    df_calc['EMA26'] = df_calc['Close'].ewm(span=26, adjust=False).mean()
+    df_calc['DIF'] = df_calc['EMA12'] - df_calc['EMA26']
+    df_calc['MACD'] = df_calc['DIF'].ewm(span=9, adjust=False).mean()
+    df_calc['OSC'] = df_calc['DIF'] - df_calc['MACD']
+
+    # 計算 RSI
+    delta = df_calc['Close'].diff()
+    gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+    rs = gain / loss
+    df_calc['RSI'] = 100 - (100 / (1 + rs))
+
+    # 計算 布林通道
+    df_calc['STD20'] = df_calc['Close'].rolling(20).std()
+    df_calc['BB_UP'] = df_calc['MA20'] + 2 * df_calc['STD20']
+    df_calc['BB_DN'] = df_calc['MA20'] - 2 * df_calc['STD20']
+
+    # 依照選單過濾顯示範圍
+    if k_range.startswith("還原"):
+        df_k = df_calc.copy()
+    else:
+        range_map = {
+            "最近50根": 50,
+            "最近100根": 100,
+            "最近150根": 150,
+            "最近200根": 200,
+            "最近300根": 300,
+        }
+        df_k = df_calc.tail(range_map[k_range]).copy()
+
+    # 顯示最高價、最低價、MA平均價
+    st.markdown("---")
+    if not df_k.empty:
+        high_val = df_k["High"].max()
+        low_val = df_k["Low"].min()
+        ma5_val = df_k["MA5"].iloc[-1]
+        ma10_val = df_k["MA10"].iloc[-1]
+        ma20_val = df_k["MA20"].iloc[-1]
+    else:
+        high_val = low_val = ma5_val = ma10_val = ma20_val = float('nan')
+
+    def fmt_val(v):
+        return f"{v:.2f}" if not pd.isna(v) else "N/A"
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.markdown(f"<div class='card' style='text-align:center; border-left:4px solid #ff3b3b;'><div style='color:#aaa; font-size:14px;'>最高價</div><div style='font-size:22px; font-weight:bold; color:#ff3b3b;'>{fmt_val(high_val)}</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='card' style='text-align:center; border-left:4px solid #00e676;'><div style='color:#aaa; font-size:14px;'>最低價</div><div style='font-size:22px; font-weight:bold; color:#00e676;'>{fmt_val(low_val)}</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='card' style='text-align:center; border-left:4px solid #FFD700;'><div style='color:#aaa; font-size:14px;'>MA5</div><div style='font-size:22px; font-weight:bold; color:#FFD700;'>{fmt_val(ma5_val)}</div></div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='card' style='text-align:center; border-left:4px solid #00E5FF;'><div style='color:#aaa; font-size:14px;'>MA10</div><div style='font-size:22px; font-weight:bold; color:#00E5FF;'>{fmt_val(ma10_val)}</div></div>", unsafe_allow_html=True)
+    c5.markdown(f"<div class='card' style='text-align:center; border-left:4px solid #FF66FF;'><div style='color:#aaa; font-size:14px;'>MA20</div><div style='font-size:22px; font-weight:bold; color:#FF66FF;'>{fmt_val(ma20_val)}</div></div>", unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 動態計算子圖數量與比例
+    extra_subplots = [ind for ind in ["KD", "MACD", "RSI"] if ind in tech_inds]
+    num_extra = len(extra_subplots)
+
+    # Base: 主圖佔 5 份，成交量佔 2 份，每一個額外指標佔 2 份
+    row_heights = [5, 2] + [2] * num_extra
+    fig = make_subplots(
+        rows=2 + num_extra, 
+        cols=1, 
+        shared_xaxes=True, 
+        row_heights=row_heights, 
+        vertical_spacing=0.02
+    )
+
+    # Row 1: 主 K 線與均線、成本線、現價線
+    fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["Open"], high=df_k["High"], low=df_k["Low"], close=df_k["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
     if cost > 0:
-        fig.add_trace(go.Scatter(x=df.index, y=[cost] * len(df), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=[curr] * len(df), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_k.index, y=[cost] * len(df_k), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df_k.index, y=[curr] * len(df_k), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
+    
+    # K線均線 (改用切片前算好的數值)
     if show_ma5:
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(5).mean(), mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k["MA5"], mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
     if show_ma10:
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(10).mean(), mode="lines", line=dict(color="#00E5FF", width=1.5), name="MA10"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k["MA10"], mode="lines", line=dict(color="#00E5FF", width=1.5), name="MA10"), row=1, col=1)
     if show_ma20:
-        fig.add_trace(go.Scatter(x=df.index, y=df["Close"].rolling(20).mean(), mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="成交量", marker_color=["rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)" for o, c in zip(df["Open"], df["Close"])]), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k["MA20"], mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
+
+    # 布林通道 (疊加在 Row 1)
+    if "布林通道" in tech_inds:
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k['BB_UP'], name="上軌", line=dict(color='rgba(255,255,255,0.4)', dash='dot')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k['BB_DN'], name="下軌", line=dict(color='rgba(255,255,255,0.4)', dash='dot')), row=1, col=1)
+
+    # Row 2: 成交量
+    vol_colors = ["rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)" for o, c in zip(df_k["Open"], df_k["Close"])]
+    fig.add_trace(go.Bar(x=df_k.index, y=df_k["Volume"], name="成交量", marker_color=vol_colors), row=2, col=1)
+
+    # Row 3+: 附加技術指標
+    current_row = 3
+    for ind in extra_subplots:
+        if ind == "KD":
+            fig.add_trace(go.Scatter(x=df_k.index, y=df_k['K'], name="K(9,3)", line=dict(color="yellow", width=1.5)), row=current_row, col=1)
+            fig.add_trace(go.Scatter(x=df_k.index, y=df_k['D'], name="D(9,3)", line=dict(color="cyan", width=1.5)), row=current_row, col=1)
+            fig.add_hline(y=80, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=current_row, col=1)
+            fig.add_hline(y=20, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=current_row, col=1)
+        elif ind == "MACD":
+            fig.add_trace(go.Scatter(x=df_k.index, y=df_k['DIF'], name="DIF", line=dict(color="yellow", width=1.5)), row=current_row, col=1)
+            fig.add_trace(go.Scatter(x=df_k.index, y=df_k['MACD'], name="MACD", line=dict(color="cyan", width=1.5)), row=current_row, col=1)
+            osc_colors = ["#ff3b3b" if val >= 0 else "#00e676" for val in df_k['OSC']]
+            fig.add_trace(go.Bar(x=df_k.index, y=df_k['OSC'], name="OSC", marker_color=osc_colors), row=current_row, col=1)
+        elif ind == "RSI":
+            fig.add_trace(go.Scatter(x=df_k.index, y=df_k['RSI'], name="RSI(14)", line=dict(color="yellow", width=1.5)), row=current_row, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=current_row, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=current_row, col=1)
+        current_row += 1
+
+    # 跳過假日處理
     if tf == "1d":
-        fig.update_xaxes(rangebreaks=[dict(values=[d for d in pd.date_range(start=df.index[0], end=df.index[-1]).strftime("%Y-%m-%d").tolist() if d not in df.index.strftime("%Y-%m-%d").tolist()])])
-    fig.update_layout(template="plotly_dark", height=700, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h"), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000")
-    fig.update_xaxes(gridcolor="#111")
+        dt_obs = df_k.index.strftime("%Y-%m-%d").tolist()
+        if len(dt_obs) > 0:
+            dt_all = pd.date_range(start=df_k.index[0], end=df_k.index[-1]).strftime("%Y-%m-%d").tolist()
+            fig.update_xaxes(rangebreaks=[dict(values=[d for d in dt_all if d not in dt_obs])])
+
+    # 動態圖表高度
+    chart_height = 700 + 150 * num_extra
+    
+    # 設定 X 軸日期/時間格式 (排除英文月份)
+    if tf_label in ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K"]:
+        dt_format = "%H:%M"
+    else:
+        dt_format = "%Y/%m/%d"
+    
+    fig.update_layout(
+        template="plotly_dark",
+        height=chart_height,
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=10, r=10, t=20, b=10),
+        legend=dict(orientation="h"),
+        hovermode="x unified",
+        paper_bgcolor="#000",
+        plot_bgcolor="#000",
+        dragmode="pan"
+    )
+    
+    # 套用 X 軸純數字格式與 hover
+    fig.update_xaxes(gridcolor="#111", tickformat=dt_format, hoverformat=dt_format)
     fig.update_yaxes(side="right", gridcolor="#111")
-    st.plotly_chart(fig, use_container_width=True)
+
+    # Plotly 顯示設定，關閉卷軸縮放，並加入畫線工具
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": False,
+            "displayModeBar": True,
+            "modeBarButtonsToAdd": ["drawline"],
+            "displaylogo": False
+        }
+    )
 
     st.markdown("---")
     dc, vc = st.columns([5, 4])
@@ -699,7 +952,7 @@ if page == "📊 K線分析":
         render_trade_details(trades, prev_c)
     with vc:
         render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
-
+        
 # =====================
 # ⚡ 即時趨勢
 # =====================
