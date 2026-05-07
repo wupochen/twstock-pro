@@ -272,16 +272,17 @@ with c3:
     period = period_map[tf_label]
     time_unit = time_unit_map[tf_label]
     
-    current_log_key = f"{page}|{symbol}|{stock_name}|{tf_label}"
+    if page != "🔐 管理後台":
+        current_log_key = f"{page}|{symbol}|{stock_name}|{tf_label}"
 
-    if st.session_state.get("last_log_key") != current_log_key:
-        log_stock_view(
-            page=page,
-            symbol=symbol,
-            stock_name=stock_name,
-            tf_label=tf_label
-        )
-        st.session_state["last_log_key"] = current_log_key
+        if st.session_state.get("last_log_key") != current_log_key:
+            log_stock_view(
+                page=page,
+                symbol=symbol,
+                stock_name=stock_name,
+                tf_label=tf_label
+            )
+            st.session_state["last_log_key"] = current_log_key
     ma1, ma2, ma3 = st.columns(3)
     with ma1:
         show_ma5 = st.checkbox("5線", True)
