@@ -15,7 +15,12 @@ from datetime import datetime, timezone, timedelta
 # =====================
 # 頁面設定
 # =====================
-st.set_page_config(layout="wide", page_title="台股戰情室 Pro")
+st.set_page_config(
+    page_title="台股戰情室",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 st.markdown("""
 <style>
@@ -989,6 +994,84 @@ if page == "📊 K線分析":
 
     hr {
         border-color: rgba(148, 163, 184, 0.15);
+    }
+
+    /* =====================
+       📱 手機版 RWD
+    ===================== */
+    @media (max-width: 768px) {
+
+        .block-container {
+            max-width: 100% !important;
+            padding-left: 0.65rem !important;
+            padding-right: 0.65rem !important;
+            padding-top: 0.5rem !important;
+        }
+
+        .stock-hero {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px 16px;
+            border-radius: 18px;
+            margin: 6px 0 14px 0;
+        }
+
+        .stock-title {
+            font-size: 25px;
+            line-height: 1.25;
+        }
+
+        .stock-subtitle {
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .stock-price {
+            width: 100%;
+            text-align: left;
+            padding-top: 10px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        .price-main {
+            font-size: 32px;
+            line-height: 1.1;
+        }
+
+        .price-sub {
+            font-size: 12px;
+        }
+
+        .card {
+            padding: 14px 14px;
+            border-radius: 16px;
+            margin-bottom: 10px;
+        }
+
+        div[data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+
+        div[data-testid="stHorizontalBlock"] {
+            gap: 0.5rem !important;
+        }
+
+        div[data-testid="stSelectbox"],
+        div[data-testid="stMultiSelect"],
+        div[data-testid="stNumberInput"] {
+            width: 100% !important;
+        }
+
+        .js-plotly-plot {
+            min-height: 420px !important;
+        }
+
+        table {
+            font-size: 12px !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
