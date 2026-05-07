@@ -25,13 +25,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 html,body,[class*='st-']{background-color:#000;color:#eee;}
-.block-container{
-    padding-top: 2.8rem !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-bottom: 1rem !important;
-    max-width: 98% !important;
-}
+.block-container{padding:1rem!important; max-width:98%!important;}
 .stTextInput input,.stNumberInput input{
     background-color:#222!important; color:#fff!important; border:1px solid #555!important;
 }
@@ -52,38 +46,6 @@ html,body,[class*='st-']{background-color:#000;color:#eee;}
 ::-webkit-scrollbar-track {background: transparent;}
 ::-webkit-scrollbar-thumb {background: #444; border-radius: 3px;}
 ::-webkit-scrollbar-thumb:hover {background: #666;}
-/* 避免圖表或自訂區塊壓到 Streamlit 原生輸入元件 */
-div[data-testid="stSelectbox"],
-div[data-testid="stTextInput"],
-div[data-testid="stNumberInput"],
-div[data-testid="stCheckbox"],
-div[data-testid="stButton"]{
-    position: relative;
-    z-index: 10;
-}
-
-
-/* ===== 手機版：讓分頁像 App 按鈕，避免一直往下滑 ===== */
-.app-title{
-    font-size:28px;
-    font-weight:900;
-    color:#fff;
-    margin:4px 0 10px 0;
-}
-.app-subtitle{
-    color:#94a3b8;
-    font-size:14px;
-    margin-bottom:10px;
-}
-@media (max-width: 768px){
-    .app-title{font-size:22px; margin-top:0;}
-    .app-subtitle{font-size:12px;}
-    .block-container{padding-left:0.7rem!important; padding-right:0.7rem!important; padding-top:0.6rem!important;}
-    div[data-testid="stExpander"]{border:1px solid #222!important; border-radius:14px!important;}
-    .order-table{font-size:14px!important;}
-    .order-price{font-size:16px!important;}
-    .fin-table{font-size:13px!important;}
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -198,128 +160,117 @@ INDUSTRY_BACKUP = {
 }
 
 # =====================
-# 頂部控制列：手機 App 點選式分頁
+# 頂部控制列
 # =====================
-PAGE_OPTIONS = [
-    "📊 K線分析",
-    "⚡ 即時趨勢",
-    "🤖 AI綜合預測",
-    "📑 基本面分析",
-    "🧩 籌碼分析",
-    "🎯 操作策略",
-]
+c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
 
-st.markdown("<div class='app-title'>台股戰情室</div><div class='app-subtitle'>先設定股票與參數，再用下方按鈕切換功能頁</div>", unsafe_allow_html=True)
+with c1:
+    page = st.radio(
+        "📌 頁面切換",
+        ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"],
+        horizontal=True
+    )
 
-# 穩定版：用 selectbox 切換頁面，避免某些電腦 / 瀏覽器發生按鈕無法點選
-page = st.selectbox(
-    "📌 頁面切換",
-    PAGE_OPTIONS,
-    index=0,
-)
+with c2:
+    stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
+    symbol, stock_name = stock_input, stock_input
 
-with st.expander("⚙️ 股票與參數設定", expanded=True):
-    c1, c2, c3 = st.columns([2.2, 1.4, 1.6])
-
-    with c1:
-        stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
-        symbol, stock_name = stock_input, stock_input
-
-        if stock_input in MASTER_DICT:
-            if stock_input.isdigit() or stock_input.endswith("B"):
-                symbol = stock_input
-                stock_name = MASTER_DICT.get(symbol, symbol)
-            else:
-                symbol = MASTER_DICT.get(stock_input, stock_input)
-                stock_name = stock_input
+    if stock_input in MASTER_DICT:
+        if stock_input.isdigit() or stock_input.endswith("B"):
+            symbol = stock_input
+            stock_name = MASTER_DICT.get(symbol, symbol)
         else:
-            exact, fuzzy = None, None
-            for k, v in MASTER_DICT.items():
-                if isinstance(v, str):
-                    if stock_input == v:
-                        exact = (k, v)
-                        break
-                    elif stock_input in v and not fuzzy:
-                        fuzzy = (k, v)
-            if exact:
-                symbol, stock_name = exact
-            elif fuzzy:
-                symbol, stock_name = fuzzy
+            symbol = MASTER_DICT.get(stock_input, stock_input)
+            stock_name = stock_input
+    else:
+        exact, fuzzy = None, None
+        for k, v in MASTER_DICT.items():
+            if isinstance(v, str):
+                if stock_input == v:
+                    exact = (k, v)
+                    break
+                elif stock_input in v and not fuzzy:
+                    fuzzy = (k, v)
+        if exact:
+            symbol, stock_name = exact
+        elif fuzzy:
+            symbol, stock_name = fuzzy
 
-        display_name = f"{symbol} {stock_name}"
+    display_name = f"{symbol} {stock_name}"
 
-    with c2:
-        tf_label = st.selectbox(
-            "📈 K線週期",
-            ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
-            index=6
-        )
+with c3:
+    tf_label = st.selectbox(
+        "📈 K線週期",
+        ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
+        index=6
+    )
 
-        tf_map = {
-            "1分K": "1m",
-            "3分K": "3m_custom",
-            "5分K": "5m",
-            "15分K": "15m",
-            "30分K": "30m",
-            "60分K": "60m",
-            "日K": "1d",
-            "週K": "1wk",
-            "月K": "1mo",
-        }
+    tf_map = {
+        "1分K": "1m",
+        "3分K": "3m_custom",
+        "5分K": "5m",
+        "15分K": "15m",
+        "30分K": "30m",
+        "60分K": "60m",
+        "日K": "1d",
+        "週K": "1wk",
+        "月K": "1mo",
+    }
 
-        period_map = {
-            "1分K": "5d",
-            "3分K": "5d",
-            "5分K": "60d",
-            "15分K": "60d",
-            "30分K": "60d",
-            "60分K": "730d",
-            "日K": "1y",
-            "週K": "5y",
-            "月K": "10y",
-        }
+    period_map = {
+        "1分K": "5d",
+        "3分K": "5d",
+        "5分K": "60d",
+        "15分K": "60d",
+        "30分K": "60d",
+        "60分K": "730d",
+        "日K": "1y",
+        "週K": "5y",
+        "月K": "10y",
+    }
 
-        time_unit_map = {
-            "1分K": "1分線",
-            "3分K": "3分線",
-            "5分K": "5分線",
-            "15分K": "15分線",
-            "30分K": "30分線",
-            "60分K": "60分線",
-            "日K": "日線",
-            "週K": "週線",
-            "月K": "月線",
-        }
+    time_unit_map = {
+        "1分K": "1分線",
+        "3分K": "3分線",
+        "5分K": "5分線",
+        "15分K": "15分線",
+        "30分K": "30分線",
+        "60分K": "60分線",
+        "日K": "日線",
+        "週K": "週線",
+        "月K": "月線",
+    }
 
-        tf = tf_map[tf_label]
-        period = period_map[tf_label]
-        time_unit = time_unit_map[tf_label]
+    tf = tf_map[tf_label]
+    period = period_map[tf_label]
+    time_unit = time_unit_map[tf_label]
 
-    with c3:
-        api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
-        if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
-            try:
-                with open("fugle_token.txt", "w", encoding="utf-8") as f:
-                    f.write(api_key)
-            except Exception:
-                pass
-
-    ma1, ma2, ma3, p1, p2, p3 = st.columns([0.75, 0.75, 0.75, 1.1, 1.1, 1.0])
+    ma1, ma2, ma3 = st.columns(3)
     with ma1:
         show_ma5 = st.checkbox("5線", True)
     with ma2:
         show_ma10 = st.checkbox("10線", True)
     with ma3:
         show_ma20 = st.checkbox("20線", True)
-    with p1:
-        qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
-    with p2:
-        cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
-    with p3:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄 手動刷新", use_container_width=True):
-            st.rerun()
 
+with c4:
+    api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
+    if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
+        try:
+            with open("fugle_token.txt", "w", encoding="utf-8") as f:
+                f.write(api_key)
+        except Exception:
+            pass
+
+p1, p2 = st.columns(2)
+with p1:
+    qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
+with p2:
+    cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
+
+# 關閉自動刷新，避免 Streamlit 前端 removeChild 錯誤
+if st.button("🔄 手動刷新"):
+    st.rerun()
 
 # =====================
 # 資料擷取引擎
@@ -1054,7 +1005,7 @@ if page == "📊 K線分析":
             max-width: 100% !important;
             padding-left: 0.65rem !important;
             padding-right: 0.65rem !important;
-            padding-top: 0.5rem !important;
+            padding-top: 1.2rem !important;
         }
 
         .stock-hero {
@@ -1139,6 +1090,14 @@ if page == "📊 K線分析":
         </div>
     </div>
     """, unsafe_allow_html=True)
+    # ✅ K線圖操作模式：手機滑動 / 電腦互動
+    chart_mode = st.radio(
+        "📱 圖表操作模式",
+        ["手機滑動優先", "電腦互動模式"],
+        index=0,
+        horizontal=True,
+        help="手機滑動優先：比較好往下滑；電腦互動模式：可拖動K線與畫線。"
+    )
 
     # 移除多餘的 K線週期選單，僅保留顯示範圍與技術指標選單
     k_col1, k_col2 = st.columns(2)
@@ -1382,21 +1341,21 @@ if page == "📊 K線分析":
     
     fig.update_layout(
         template="plotly_dark",
-        height=chart_height,
+        height=560,
         xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=30, b=10),
+        margin=dict(l=6, r=6, t=18, b=8),
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.01,
             xanchor="left",
             x=0,
-            font=dict(color="#cbd5e1")
+            font=dict(color="#cbd5e1", size=11)
         ),
         hovermode="x unified",
         paper_bgcolor="rgba(2, 6, 23, 0)",
         plot_bgcolor="rgba(2, 6, 23, 0.88)",
-        dragmode="pan",
+        dragmode=False if chart_mode == "手機滑動優先" else "pan",
         font=dict(color="#e5e7eb")
     )
 
@@ -1420,11 +1379,15 @@ if page == "📊 K線分析":
         linecolor="rgba(148, 163, 184, 0.18)"
     )
 
-    # Plotly 顯示設定，設定工具列按鈕與防滾輪縮放
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
+    # Plotly 顯示設定：依照手機 / 電腦模式切換
+    if chart_mode == "手機滑動優先":
+        plot_config = {
+            "scrollZoom": False,
+            "displayModeBar": False,
+            "displaylogo": False
+        }
+    else:
+        plot_config = {
             "scrollZoom": False,
             "displayModeBar": True,
             "displaylogo": False,
@@ -1438,10 +1401,15 @@ if page == "📊 K線分析":
                 "autoScale2d"
             ]
         }
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config=plot_config
     )
 
-    st.caption("📌 成交明細與委託量統計已移到「⚡ 即時趨勢」與「🧩 籌碼分析」，K線頁只保留圖表與技術指標，手機版比較不用一直往下滑。")
-
+    
+        
 # =====================
 # ⚡ 即時趨勢
 # =====================
@@ -1476,7 +1444,57 @@ elif page == "⚡ 即時趨勢":
         sell_pct = 100 - buy_pct
 
         df_plot["VMA"] = df_plot["Volume"].rolling(10).mean().shift(1)
-        surges = [f"⚠️ {dt.strftime('%H:%M')} 爆量 {r['Volume'] / r['VMA']:.1f} 倍" for dt, r in df_plot.iterrows() if r["Volume"] > 0 and r["VMA"] > 0 and r["Volume"] > r["VMA"] * 2][-5:]
+
+        surges = []
+        buy_surge_streak = 0
+        sell_surge_streak = 0
+        gold_signal = ""
+
+        prev_price_for_surge = prev_c
+
+        for dt, r in df_plot.iterrows():
+            vol = r["Volume"] if not pd.isna(r["Volume"]) else 0
+            vma = r["VMA"] if not pd.isna(r["VMA"]) else 0
+            close_price = r["Close"] if not pd.isna(r["Close"]) else 0
+            vwap_price = r["VWAP"] if "VWAP" in df_plot.columns and not pd.isna(r["VWAP"]) else close_price
+
+            if vol > 0 and vma > 0:
+                ratio = vol / vma
+
+                # 判斷這根是偏買還是偏賣
+                if close_price >= prev_price_for_surge:
+                    direction = "buy"
+                else:
+                    direction = "sell"
+
+                # 爆量門檻：大於前10根均量2倍，而且單根量至少300
+                if ratio >= 2 and vol >= 300:
+                    if direction == "buy":
+                        buy_surge_streak += 1
+                        sell_surge_streak = 0
+                        surges.append(f"🚀 {dt.strftime('%H:%M')} 爆量買 {ratio:.1f} 倍")
+
+                    else:
+                        sell_surge_streak += 1
+                        buy_surge_streak = 0
+                        surges.append(f"💣 {dt.strftime('%H:%M')} 爆量賣 {ratio:.1f} 倍")
+
+                    # 金探號條件：連續3根爆量買，而且價格站上VWAP
+                    if buy_surge_streak >= 3 and close_price >= vwap_price:
+                        gold_signal = f"🟡 金探號 {dt.strftime('%H:%M')}：連續 {buy_surge_streak} 根爆量買，價格站上均價"
+
+                    # 黑探號條件：連續3根爆量賣，而且價格跌破VWAP
+                    if sell_surge_streak >= 3 and close_price < vwap_price:
+                        gold_signal = f"⚫ 風險訊號 {dt.strftime('%H:%M')}：連續 {sell_surge_streak} 根爆量賣，價格跌破均價"
+
+                else:
+                    # 沒爆量就不要累積連續訊號
+                    buy_surge_streak = 0
+                    sell_surge_streak = 0
+
+            prev_price_for_surge = close_price if close_price > 0 else prev_price_for_surge
+
+        surges = surges[-5:]
 
         m1, m2, m3, m4 = st.columns(4)
         m1.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>現價 / 漲跌</div><div style='color:{price_color(curr, prev_c)}; font-size:22px; font-weight:bold;'>{curr:.2f} <span style='font-size:16px;'>({diff:+.2f} {pct:+.2f}%)</span></div></div>", unsafe_allow_html=True)
@@ -1484,10 +1502,45 @@ elif page == "⚡ 即時趨勢":
         m3.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>今日振幅</div><div style='color:#ffcc00; font-size:22px; font-weight:bold;'>{amp_pct:.2f}%</div></div>", unsafe_allow_html=True)
         m4.markdown(f"<div class='card' style='text-align:center;'><div style='color:#aaa; font-size:14px;'>即時均價 (VWAP)</div><div style='color:#fff; font-size:22px; font-weight:bold;'>{df_plot['VWAP'].iloc[-1]:.2f}</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div class='card' style='margin-top:10px; margin-bottom:15px;'><div style='display:flex; justify-content:space-between; margin-bottom:5px; font-size:15px;'><span style='color:#ff3b3b; font-weight:bold;'>🔥 主動買盤 {buy_pct:.1f}%</span><span style='color:#00e676; font-weight:bold;'>❄️ 主動賣盤 {sell_pct:.1f}%</span></div><div style='height:12px; background:#1a1a1a; border-radius:6px; display:flex; overflow:hidden;'><div style='width:{buy_pct}%; background:#ff3b3b;'></div><div style='width:{sell_pct}%; background:#00e676;'></div></div></div>", unsafe_allow_html=True)
-        if surges:
-            st.markdown(f"<div style='margin-bottom:15px;'>{''.join([f'<span style=\"background:#332b00; border:1px solid #665500; color:#ffcc00; padding:4px 10px; border-radius:5px; margin-right:10px; font-size:14px; font-weight:bold;\">{s}</span>' for s in surges])}</div>", unsafe_allow_html=True)
+        if gold_signal:
+            st.markdown(
+                f"""
+                <div style="
+                    background:linear-gradient(90deg,#3a2f00,#111);
+                    border:1px solid #ffcc00;
+                    color:#ffcc00;
+                    padding:10px 14px;
+                    border-radius:8px;
+                    margin:10px 0 12px 0;
+                    font-size:16px;
+                    font-weight:bold;
+                ">
+                    {gold_signal}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-        cdata = [[r["Volume"], ((r["Close"] - prev_c) / prev_c * 100) if prev_c else 0] for _, r in df_plot.iterrows()]
+        if surges:
+            st.markdown(
+                f"""
+                <div style="margin-bottom:15px;">
+                    {''.join([
+                        f'<span style="background:#332b00; border:1px solid #665500; color:#ffcc00; padding:4px 10px; border-radius:5px; margin-right:10px; font-size:14px; font-weight:bold;">{s}</span>'
+                        for s in surges
+                    ])}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        cdata = [
+            [
+                int(r["Volume"]) if not pd.isna(r["Volume"]) else 0,
+                round(((r["Close"] - prev_c) / prev_c * 100), 2) if prev_c else 0
+            ]
+            for _, r in df_plot.iterrows()
+        ]
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.02)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Close"], mode="lines", name="即價", line=dict(color="yellow", width=2.5), customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>價格:</b> %{y:.2f}<br><b>漲跌:</b> %{customdata[1]:+.2f}%<br><b>量:</b> %{customdata[0]:,.0f}<extra></extra>"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["VWAP"], mode="lines", name="均價", line=dict(color="white", width=1.5, dash="dot"), hoverinfo="skip"), row=1, col=1)
@@ -1498,7 +1551,15 @@ elif page == "⚡ 即時趨勢":
         fig.update_layout(template="plotly_dark", height=650, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000")
         fig.update_xaxes(gridcolor="#111", showspikes=True, spikemode="across", spikesnap="cursor", showline=False, spikedash="solid")
         fig.update_yaxes(side="right", gridcolor="#111")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={
+                "scrollZoom": False,
+                "displayModeBar": False,
+                "displaylogo": False
+            }
+        )
     else:
         st.warning("⚠️ 無盤中資料")
 
@@ -1946,10 +2007,6 @@ elif page == "📑 基本面分析":
 # =====================
 elif page == "🧩 籌碼分析":
     st.markdown(f"## 🧩 {display_name} 籌碼分析")
-
-    # 即時委託量、成交量與逐價分布集中放在籌碼頁，避免 K線頁過長
-    render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
-    st.markdown("---")
 
     def fmt_chip_num(v, plus=False, bold=False):
         try:
@@ -2411,34 +2468,32 @@ elif page == "🎯 操作策略":
         st.markdown("<br><div style='text-align:center; color:#ff3b3b; font-size:14px; background:#2a0a0a; padding:10px; border-radius:5px;'>⚠️ 本頁為規則型量化整理，僅供觀察參考，不構成任何買賣建議。</div>", unsafe_allow_html=True)
 
 # =====================
-# 即時頁專用：庫存、五檔、成交明細
+# 底部資訊 (全頁共用)
 # =====================
-if page == "⚡ 即時趨勢":
-    st.markdown("---")
-    b1, b2 = st.columns([4, 6])
+st.markdown("---")
+b1, b2 = st.columns([4, 6])
 
-    with b1:
-        pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
-        st.markdown(
-            f"""
-            <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
-                <h3>💰 庫存狀態</h3>
-                <p style='color:#aaa;'>{display_name}</p>
-                <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
-                <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
-                    現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
-                </p>
-                <h3>📊 總盈虧</h3>
-                <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
-                    {int(profit):,} 元
-                </div>
+with b1:
+    pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
+    st.markdown(
+        f"""
+        <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
+            <h3>💰 庫存狀態</h3>
+            <p style='color:#aaa;'>{display_name}</p>
+            <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
+            <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
+                現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
+            </p>
+            <h3>📊 總盈虧</h3>
+            <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
+                {int(profit):,} 元
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
+if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
     with b2:
         st.markdown("### ⚖️ 即時五檔明細")
         render_order_book(bids, asks, prev_c, curr)
-
-    render_trade_details(trades, prev_c)
