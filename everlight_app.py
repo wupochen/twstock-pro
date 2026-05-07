@@ -964,12 +964,7 @@ if page == "📊 K線分析":
         render_trade_details(trades, prev_c)
     with vc:
         render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
-    st.markdown("---")
-    dc, vc = st.columns([5, 4])
-    with dc:
-        render_trade_details(trades, prev_c)
-    with vc:
-        render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
+    
         
 # =====================
 # ⚡ 即時趨勢
