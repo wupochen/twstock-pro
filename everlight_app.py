@@ -160,7 +160,11 @@ INDUSTRY_BACKUP = {
 c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
 
 with c1:
-    page = st.radio("📌 頁面切換", ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析"], horizontal=True)
+    page = st.radio(
+        "📌 頁面切換",
+        ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"],
+        horizontal=True
+    )
 
 with c2:
     stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
@@ -934,18 +938,32 @@ if page == "📊 K線分析":
     fig.update_xaxes(gridcolor="#111", tickformat=dt_format, hoverformat=dt_format)
     fig.update_yaxes(side="right", gridcolor="#111")
 
-    # Plotly 顯示設定，關閉卷軸縮放，並加入畫線工具
+       # Plotly 顯示設定，設定工具列按鈕與防滾輪縮放
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
             "scrollZoom": False,
             "displayModeBar": True,
-            "modeBarButtonsToAdd": ["drawline"],
-            "displaylogo": False
+            "displaylogo": False,
+            "modeBarButtonsToAdd": [
+                "drawline",
+                "eraseshape"
+            ],
+            "modeBarButtonsToRemove": [
+                "select2d",
+                "lasso2d",
+                "autoScale2d"
+            ]
         }
     )
 
+    st.markdown("---")
+    dc, vc = st.columns([5, 4])
+    with dc:
+        render_trade_details(trades, prev_c)
+    with vc:
+        render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
     st.markdown("---")
     dc, vc = st.columns([5, 4])
     with dc:
@@ -1665,6 +1683,259 @@ elif page == "🧩 籌碼分析":
             st.info("📡 暫無融資融券資料")
 
 # =====================
+# 🎯 操作策略
+# =====================
+elif page == "🎯 操作策略":
+    st.markdown(f"## 🎯 {display_name} 操作策略")
+
+    if df.empty:
+        st.warning("📡 K線資料不足，無法產生操作策略。")
+    else:
+        # 預設與防呆變數
+        vwap_val = curr
+        buy_pct_val = 0.5
+        max_vol_p = curr
+        whale_net = 0
+        
+        # 1. 盤中資訊計算 (VWAP, 主動買盤, 大量成交價, 大戶結構)
+        try:
+            if not df_i_for_summary.empty:
+                vol_sum = df_i_for_summary["Volume"].sum()
+                if vol_sum > 0:
+                    vwap_val = (df_i_for_summary["Close"] * df_i_for_summary["Volume"]).sum() / vol_sum
+                
+                buy_v = 0
+                pc = prev_c
+                for _, r in df_i_for_summary.iterrows():
+                    c_p = r["Close"]
+                    if c_p >= pc: buy_v += r["Volume"]
+                    pc = c_p
+                if vol_sum > 0:
+                    buy_pct_val = buy_v / vol_sum
+        except Exception: pass
+        
+        try:
+            if trades:
+                pv = {}
+                w_b, w_s = 0, 0
+                last_p = prev_c
+                
+                for t in reversed(trades):
+                    p_t = float(t.get("price", t.get("tradePrice", 0)) or 0)
+                    s_t = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
+                    if p_t == 0 or s_t == 0: continue
+                    
+                    # 統計最大成交量價格
+                    pv[p_t] = pv.get(p_t, 0) + s_t
+                    
+                    # 統計大戶
+                    is_buy = p_t >= last_p
+                    if s_t >= 50:
+                        if is_buy: w_b += s_t
+                        else: w_s += s_t
+                    last_p = p_t
+                
+                if pv: max_vol_p = max(pv, key=pv.get)
+                whale_net = w_b - w_s
+        except Exception: pass
+
+        # 2. 波段資訊計算 (MA5, 10, 20, 20日高低點, MACD, RSI)
+        try:
+            ma5 = df["Close"].rolling(5).mean().iloc[-1]
+            ma10 = df["Close"].rolling(10).mean().iloc[-1]
+            ma20 = df["Close"].rolling(20).mean().iloc[-1]
+            high20 = df["High"].tail(20).max()
+            low20 = df["Low"].tail(20).min()
+            
+            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+            dif = ema12 - ema26
+            macd = dif.ewm(span=9, adjust=False).mean()
+            osc = (dif - macd).iloc[-1]
+            
+            delta = df['Close'].diff()
+            gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
+            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            rs = gain / loss
+            rsi14 = (100 - (100 / (1 + rs))).iloc[-1]
+        except Exception:
+            ma5 = ma10 = ma20 = high20 = low20 = osc = rsi14 = float('nan')
+
+        # 3. 外資籌碼計算
+        f_sum_5 = 0
+        has_foreign = False
+        try:
+            inst_df = fetch_institutional_chips(symbol, FINMIND_TOKEN)
+            if not inst_df.empty and '外資' in inst_df.columns:
+                f_sum_5 = inst_df.tail(5)['外資'].sum()
+                has_foreign = True
+        except Exception: pass
+
+        # 4. 長線基本面計算 (修正 NoneType 報錯問題)
+        eps, roe, rev_growth = float('nan'), float('nan'), float('nan')
+        has_fund = False
+        try:
+            info, _ = fetch_fundamentals(symbol, suffix)
+            if info:
+                raw_eps = info.get("trailingEps")
+                raw_roe = info.get("returnOnEquity")
+                raw_rev = info.get("revenueGrowth")
+
+                eps = float(raw_eps) if raw_eps is not None else float("nan")
+                roe = float(raw_roe) if raw_roe is not None else float("nan")
+                rev_growth = float(raw_rev) if raw_rev is not None else float("nan")
+                has_fund = True
+        except Exception: pass
+
+        # === 狀態判斷邏輯 ===
+        # 短線狀態
+        if curr > vwap_val and buy_pct_val > 0.55 and whale_net > 0 and curr >= max_vol_p:
+            short_status, short_color = "短線偏多觀察", "#ff3b3b"
+        elif curr < vwap_val and buy_pct_val < 0.45 and whale_net < 0:
+            short_status, short_color = "短線偏空保守", "#00e676"
+        else:
+            short_status, short_color = "短線震盪觀望", "#ffcc00"
+            
+        # 波段狀態
+        if curr > ma20 and ma5 > ma10 and osc > 0 and 50 <= rsi14 <= 75:
+            mid_status, mid_color = "波段偏多", "#ff3b3b"
+        elif curr < ma20 and ma5 < ma10 and osc < 0:
+            mid_status, mid_color = "波段偏空", "#00e676"
+        else:
+            mid_status, mid_color = "波段整理", "#ffcc00"
+            
+        # 長線狀態
+        long_status, long_color = "長線資料不足", "#aaa"
+        if has_fund and not pd.isna(eps) and not pd.isna(roe) and not pd.isna(rev_growth):
+            if eps > 0 and roe > 0.1 and rev_growth > 0:
+                long_status, long_color = "長線偏多", "#ff3b3b"
+            elif eps <= 0 or rev_growth < 0:
+                long_status, long_color = "長線保守", "#00e676"
+            else:
+                long_status, long_color = "長線中性", "#ffcc00"
+
+        # 操作提醒
+        reminder = "盤勢震盪，請嚴格控管資金與部位。"
+        if "多" in short_status and "多" in mid_status:
+            reminder = "偏多觀察，可等待回測 VWAP 或 MA5 附近是否有支撐。"
+        elif "空" in short_status and "多" in mid_status:
+            reminder = "波段仍可觀察，但短線轉弱，不建議追價。"
+        elif "空" in short_status and "空" in mid_status:
+            reminder = "偏保守，等待重新站回 VWAP 或 MA20。"
+        elif "多" in short_status and "空" in mid_status:
+            reminder = "短線有反彈跡象，但波段尚未翻多，淺嚐即止。"
+            
+        if long_status == "長線資料不足":
+            reminder += "<br><span style='color:#aaa; font-size:13px;'>補充：基本面資料不足，長線判斷需保守看待。</span>"
+
+        # 畫面輸出：上方四張卡片
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f"<div class='card' style='border-top:4px solid {short_color}; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>短線狀態</h4><div style='font-size:24px; font-weight:bold; color:{short_color};'>{short_status}</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='card' style='border-top:4px solid {mid_color}; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>波段狀態</h4><div style='font-size:24px; font-weight:bold; color:{mid_color};'>{mid_status}</div></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='card' style='border-top:4px solid {long_color}; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>長線狀態</h4><div style='font-size:24px; font-weight:bold; color:{long_color};'>{long_status}</div></div>", unsafe_allow_html=True)
+        c4.markdown(f"<div class='card' style='border-top:4px solid #00E5FF; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>操作提醒</h4><div style='font-size:16px; color:#fff;'>{reminder}</div></div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+
+        # 多空方條件整理
+        bull_conds = []
+        if curr >= vwap_val: bull_conds.append("現價站上 VWAP")
+        if buy_pct_val > 0.55: bull_conds.append("主動買盤大於 55%")
+        if whale_net > 0: bull_conds.append("大戶成交結構偏進貨")
+        if has_foreign and f_sum_5 > 0: bull_conds.append("外資近5日買超")
+        if not pd.isna(ma20) and curr >= ma20: bull_conds.append("現價站上 MA20")
+        if not pd.isna(ma5) and not pd.isna(ma10) and ma5 > ma10: bull_conds.append("MA5 高於 MA10")
+        if not pd.isna(osc) and osc > 0: bull_conds.append("MACD OSC 為正")
+        if not pd.isna(rsi14) and 50 <= rsi14 <= 75: bull_conds.append("RSI 位於強勢區")
+        if curr >= max_vol_p: bull_conds.append("現價高於大量成交價")
+        
+        bear_conds = []
+        if curr < vwap_val: bear_conds.append("現價跌破 VWAP")
+        if buy_pct_val < 0.45: bear_conds.append("主動買盤低於 45%")
+        if whale_net < 0: bear_conds.append("大戶成交結構偏出貨")
+        if has_foreign and f_sum_5 < 0: bear_conds.append("外資近5日賣超")
+        if not pd.isna(ma20) and curr < ma20: bear_conds.append("現價跌破 MA20")
+        if not pd.isna(ma5) and not pd.isna(ma10) and ma5 < ma10: bear_conds.append("MA5 低於 MA10")
+        if not pd.isna(osc) and osc < 0: bear_conds.append("MACD OSC 為負")
+        if not pd.isna(rsi14) and rsi14 > 80: bear_conds.append("RSI 過熱大於 80")
+        if curr < max_vol_p: bear_conds.append("現價低於大量成交價")
+
+        # 畫面輸出：中間兩欄條件
+        b1_col, b2_col = st.columns(2)
+        with b1_col:
+            st.markdown("<h4 style='color:#ff3b3b;'>✅ 多方條件</h4>", unsafe_allow_html=True)
+            if not bull_conds:
+                st.info("目前多方條件不足")
+            else:
+                h = "<div class='card'><ul style='color:#ccc; font-size:16px; line-height:1.8; margin-bottom:0;'>"
+                for c in bull_conds[:6]: h += f"<li>{c}</li>"
+                h += "</ul></div>"
+                st.markdown(h, unsafe_allow_html=True)
+        with b2_col:
+            st.markdown("<h4 style='color:#00e676;'>⚠️ 空方風險</h4>", unsafe_allow_html=True)
+            if not bear_conds:
+                st.info("目前空方風險不明顯")
+            else:
+                h = "<div class='card'><ul style='color:#ccc; font-size:16px; line-height:1.8; margin-bottom:0;'>"
+                for c in bear_conds[:6]: h += f"<li>{c}</li>"
+                h += "</ul></div>"
+                st.markdown(h, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # 分批進場安全價格計算
+        active_p = min(curr, vwap_val)
+        steady_p = ma5 if not pd.isna(ma5) else vwap_val
+        cons_p = ma20 if not pd.isna(ma20) else low20
+        
+        # 停損停利計算
+        sl_short = min(vwap_val, max_vol_p) * 0.99
+        sl_mid = (ma20 * 0.98) if not pd.isna(ma20) else (low20 * 0.98)
+        sl_last = low20 * 0.97
+        
+        tp_1 = curr + (curr - sl_short)
+        tp_2 = high20
+        tp_3 = high20 * 1.05
+
+        def safe_p(v): 
+            return f"{v:.2f}" if not pd.isna(v) else "N/A"
+
+        # 畫面輸出：下方兩欄進場停損參考
+        p1_col, p2_col = st.columns(2)
+        with p1_col:
+            st.markdown("<h4 style='color:#FFD700;'>💰 分批進場安全價格 (分批觀察價)</h4>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='card'>
+                <ul style='color:#ccc; font-size:16px; line-height:2.0; list-style:none; padding-left:0; margin-bottom:0;'>
+                    <li>⚡ <span style='color:#aaa;'>積極觀察價：</span> <strong style='color:#fff; font-size:18px;'>{safe_p(active_p)}</strong></li>
+                    <li>🚶 <span style='color:#aaa;'>穩健觀察價：</span> <strong style='color:#fff; font-size:18px;'>{safe_p(steady_p)}</strong></li>
+                    <li>🛡️ <span style='color:#aaa;'>保守觀察價：</span> <strong style='color:#fff; font-size:18px;'>{safe_p(cons_p)}</strong></li>
+                    <li>📊 <span style='color:#aaa;'>大量成交價：</span> <strong style='color:#fff; font-size:18px;'>{safe_p(max_vol_p)}</strong></li>
+                </ul>
+                <div style='color:#888; font-size:13px; margin-top:10px;'>💡 這是依技術與量價推估的分批觀察區，不是保證買點。</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with p2_col:
+            st.markdown("<h4 style='color:#00E5FF;'>🛡️ 停損停利 (參考)</h4>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='card'>
+                <ul style='color:#ccc; font-size:16px; line-height:2.0; list-style:none; padding-left:0; margin-bottom:0;'>
+                    <li>🚨 <span style='color:#aaa;'>短線停損：</span> <strong style='color:#00e676; font-size:18px;'>{safe_p(sl_short)}</strong></li>
+                    <li>⚠️ <span style='color:#aaa;'>波段停損：</span> <strong style='color:#00e676; font-size:18px;'>{safe_p(sl_mid)}</strong></li>
+                    <li>🛑 <span style='color:#aaa;'>最後防守：</span> <strong style='color:#00e676; font-size:18px;'>{safe_p(sl_last)}</strong></li>
+                    <hr style='border-color:#333; margin:8px 0;'>
+                    <li>🎯 <span style='color:#aaa;'>第一停利：</span> <strong style='color:#ff3b3b; font-size:18px;'>{safe_p(tp_1)}</strong></li>
+                    <li>🚀 <span style='color:#aaa;'>第二停利：</span> <strong style='color:#ff3b3b; font-size:18px;'>{safe_p(tp_2)}</strong></li>
+                    <li>🔥 <span style='color:#aaa;'>強勢停利：</span> <strong style='color:#ff3b3b; font-size:18px;'>{safe_p(tp_3)}</strong></li>
+                </ul>
+                <div style='color:#888; font-size:13px; margin-top:10px;'>💡 停損停利為風險控管參考，不構成買賣建議。</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("<br><div style='text-align:center; color:#ff3b3b; font-size:14px; background:#2a0a0a; padding:10px; border-radius:5px;'>⚠️ 本頁為規則型量化整理，僅供觀察參考，不構成任何買賣建議。</div>", unsafe_allow_html=True)
+
+# =====================
 # 底部資訊 (全頁共用)
 # =====================
 st.markdown("---")
@@ -1690,7 +1961,7 @@ with b1:
         unsafe_allow_html=True
     )
 
-if page not in ["📑 基本面分析", "🧩 籌碼分析"]:
+if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
     with b2:
         st.markdown("### ⚖️ 即時五檔明細")
         render_order_book(bids, asks, prev_c, curr)
