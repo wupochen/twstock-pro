@@ -25,7 +25,13 @@ st.set_page_config(
 st.markdown("""
 <style>
 html,body,[class*='st-']{background-color:#000;color:#eee;}
-.block-container{padding:1rem!important; max-width:98%!important;}
+.block-container{
+    padding-top: 2.8rem !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-bottom: 1rem !important;
+    max-width: 98% !important;
+}
 .stTextInput input,.stNumberInput input{
     background-color:#222!important; color:#fff!important; border:1px solid #555!important;
 }
@@ -46,6 +52,38 @@ html,body,[class*='st-']{background-color:#000;color:#eee;}
 ::-webkit-scrollbar-track {background: transparent;}
 ::-webkit-scrollbar-thumb {background: #444; border-radius: 3px;}
 ::-webkit-scrollbar-thumb:hover {background: #666;}
+/* 避免圖表或自訂區塊壓到 Streamlit 原生輸入元件 */
+div[data-testid="stSelectbox"],
+div[data-testid="stTextInput"],
+div[data-testid="stNumberInput"],
+div[data-testid="stCheckbox"],
+div[data-testid="stButton"]{
+    position: relative;
+    z-index: 10;
+}
+
+
+/* ===== 手機版：讓分頁像 App 按鈕，避免一直往下滑 ===== */
+.app-title{
+    font-size:28px;
+    font-weight:900;
+    color:#fff;
+    margin:4px 0 10px 0;
+}
+.app-subtitle{
+    color:#94a3b8;
+    font-size:14px;
+    margin-bottom:10px;
+}
+@media (max-width: 768px){
+    .app-title{font-size:22px; margin-top:0;}
+    .app-subtitle{font-size:12px;}
+    .block-container{padding-left:0.7rem!important; padding-right:0.7rem!important; padding-top:0.6rem!important;}
+    div[data-testid="stExpander"]{border:1px solid #222!important; border-radius:14px!important;}
+    .order-table{font-size:14px!important;}
+    .order-price{font-size:16px!important;}
+    .fin-table{font-size:13px!important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,117 +198,128 @@ INDUSTRY_BACKUP = {
 }
 
 # =====================
-# 頂部控制列
+# 頂部控制列：手機 App 點選式分頁
 # =====================
-c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
+PAGE_OPTIONS = [
+    "📊 K線分析",
+    "⚡ 即時趨勢",
+    "🤖 AI綜合預測",
+    "📑 基本面分析",
+    "🧩 籌碼分析",
+    "🎯 操作策略",
+]
 
-with c1:
-    page = st.radio(
-        "📌 頁面切換",
-        ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"],
-        horizontal=True
-    )
+st.markdown("<div class='app-title'>台股戰情室</div><div class='app-subtitle'>先設定股票與參數，再用下方按鈕切換功能頁</div>", unsafe_allow_html=True)
 
-with c2:
-    stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
-    symbol, stock_name = stock_input, stock_input
+# 穩定版：用 selectbox 切換頁面，避免某些電腦 / 瀏覽器發生按鈕無法點選
+page = st.selectbox(
+    "📌 頁面切換",
+    PAGE_OPTIONS,
+    index=0,
+)
 
-    if stock_input in MASTER_DICT:
-        if stock_input.isdigit() or stock_input.endswith("B"):
-            symbol = stock_input
-            stock_name = MASTER_DICT.get(symbol, symbol)
+with st.expander("⚙️ 股票與參數設定", expanded=True):
+    c1, c2, c3 = st.columns([2.2, 1.4, 1.6])
+
+    with c1:
+        stock_input = st.text_input("🔍 股票代號 / 中文名稱", value="1711").replace(".TW","").replace(".TWO","").replace(".tw","").replace(".two","").strip().upper()
+        symbol, stock_name = stock_input, stock_input
+
+        if stock_input in MASTER_DICT:
+            if stock_input.isdigit() or stock_input.endswith("B"):
+                symbol = stock_input
+                stock_name = MASTER_DICT.get(symbol, symbol)
+            else:
+                symbol = MASTER_DICT.get(stock_input, stock_input)
+                stock_name = stock_input
         else:
-            symbol = MASTER_DICT.get(stock_input, stock_input)
-            stock_name = stock_input
-    else:
-        exact, fuzzy = None, None
-        for k, v in MASTER_DICT.items():
-            if isinstance(v, str):
-                if stock_input == v:
-                    exact = (k, v)
-                    break
-                elif stock_input in v and not fuzzy:
-                    fuzzy = (k, v)
-        if exact:
-            symbol, stock_name = exact
-        elif fuzzy:
-            symbol, stock_name = fuzzy
+            exact, fuzzy = None, None
+            for k, v in MASTER_DICT.items():
+                if isinstance(v, str):
+                    if stock_input == v:
+                        exact = (k, v)
+                        break
+                    elif stock_input in v and not fuzzy:
+                        fuzzy = (k, v)
+            if exact:
+                symbol, stock_name = exact
+            elif fuzzy:
+                symbol, stock_name = fuzzy
 
-    display_name = f"{symbol} {stock_name}"
+        display_name = f"{symbol} {stock_name}"
 
-with c3:
-    tf_label = st.selectbox(
-        "📈 K線週期",
-        ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
-        index=6
-    )
+    with c2:
+        tf_label = st.selectbox(
+            "📈 K線週期",
+            ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
+            index=6
+        )
 
-    tf_map = {
-        "1分K": "1m",
-        "3分K": "3m_custom",
-        "5分K": "5m",
-        "15分K": "15m",
-        "30分K": "30m",
-        "60分K": "60m",
-        "日K": "1d",
-        "週K": "1wk",
-        "月K": "1mo",
-    }
+        tf_map = {
+            "1分K": "1m",
+            "3分K": "3m_custom",
+            "5分K": "5m",
+            "15分K": "15m",
+            "30分K": "30m",
+            "60分K": "60m",
+            "日K": "1d",
+            "週K": "1wk",
+            "月K": "1mo",
+        }
 
-    period_map = {
-        "1分K": "5d",
-        "3分K": "5d",
-        "5分K": "60d",
-        "15分K": "60d",
-        "30分K": "60d",
-        "60分K": "730d",
-        "日K": "1y",
-        "週K": "5y",
-        "月K": "10y",
-    }
+        period_map = {
+            "1分K": "5d",
+            "3分K": "5d",
+            "5分K": "60d",
+            "15分K": "60d",
+            "30分K": "60d",
+            "60分K": "730d",
+            "日K": "1y",
+            "週K": "5y",
+            "月K": "10y",
+        }
 
-    time_unit_map = {
-        "1分K": "1分線",
-        "3分K": "3分線",
-        "5分K": "5分線",
-        "15分K": "15分線",
-        "30分K": "30分線",
-        "60分K": "60分線",
-        "日K": "日線",
-        "週K": "週線",
-        "月K": "月線",
-    }
+        time_unit_map = {
+            "1分K": "1分線",
+            "3分K": "3分線",
+            "5分K": "5分線",
+            "15分K": "15分線",
+            "30分K": "30分線",
+            "60分K": "60分線",
+            "日K": "日線",
+            "週K": "週線",
+            "月K": "月線",
+        }
 
-    tf = tf_map[tf_label]
-    period = period_map[tf_label]
-    time_unit = time_unit_map[tf_label]
+        tf = tf_map[tf_label]
+        period = period_map[tf_label]
+        time_unit = time_unit_map[tf_label]
 
-    ma1, ma2, ma3 = st.columns(3)
+    with c3:
+        api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
+        if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
+            try:
+                with open("fugle_token.txt", "w", encoding="utf-8") as f:
+                    f.write(api_key)
+            except Exception:
+                pass
+
+    ma1, ma2, ma3, p1, p2, p3 = st.columns([0.75, 0.75, 0.75, 1.1, 1.1, 1.0])
     with ma1:
         show_ma5 = st.checkbox("5線", True)
     with ma2:
         show_ma10 = st.checkbox("10線", True)
     with ma3:
         show_ma20 = st.checkbox("20線", True)
+    with p1:
+        qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
+    with p2:
+        cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
+    with p3:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 手動刷新", use_container_width=True):
+            st.rerun()
 
-with c4:
-    api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
-    if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
-        try:
-            with open("fugle_token.txt", "w", encoding="utf-8") as f:
-                f.write(api_key)
-        except Exception:
-            pass
-
-p1, p2 = st.columns(2)
-with p1:
-    qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
-with p2:
-    cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
-
-# 關閉自動刷新，避免 Streamlit 前端 removeChild 錯誤
-if st.button("🔄 手動刷新"):
-    st.rerun()
 
 # =====================
 # 資料擷取引擎
@@ -1391,14 +1440,8 @@ if page == "📊 K線分析":
         }
     )
 
-    st.markdown("---")
-    dc, vc = st.columns([5, 4])
-    with dc:
-        render_trade_details(trades, prev_c)
-    with vc:
-        render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
-    
-        
+    st.caption("📌 成交明細與委託量統計已移到「⚡ 即時趨勢」與「🧩 籌碼分析」，K線頁只保留圖表與技術指標，手機版比較不用一直往下滑。")
+
 # =====================
 # ⚡ 即時趨勢
 # =====================
@@ -1904,6 +1947,10 @@ elif page == "📑 基本面分析":
 elif page == "🧩 籌碼分析":
     st.markdown(f"## 🧩 {display_name} 籌碼分析")
 
+    # 即時委託量、成交量與逐價分布集中放在籌碼頁，避免 K線頁過長
+    render_volume_summary(bids, asks, trades, df_i_for_summary, prev_c)
+    st.markdown("---")
+
     def fmt_chip_num(v, plus=False, bold=False):
         try:
             v = float(v)
@@ -2364,32 +2411,34 @@ elif page == "🎯 操作策略":
         st.markdown("<br><div style='text-align:center; color:#ff3b3b; font-size:14px; background:#2a0a0a; padding:10px; border-radius:5px;'>⚠️ 本頁為規則型量化整理，僅供觀察參考，不構成任何買賣建議。</div>", unsafe_allow_html=True)
 
 # =====================
-# 底部資訊 (全頁共用)
+# 即時頁專用：庫存、五檔、成交明細
 # =====================
-st.markdown("---")
-b1, b2 = st.columns([4, 6])
+if page == "⚡ 即時趨勢":
+    st.markdown("---")
+    b1, b2 = st.columns([4, 6])
 
-with b1:
-    pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
-    st.markdown(
-        f"""
-        <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
-            <h3>💰 庫存狀態</h3>
-            <p style='color:#aaa;'>{display_name}</p>
-            <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
-            <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
-                現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
-            </p>
-            <h3>📊 總盈虧</h3>
-            <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
-                {int(profit):,} 元
+    with b1:
+        pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
+        st.markdown(
+            f"""
+            <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
+                <h3>💰 庫存狀態</h3>
+                <p style='color:#aaa;'>{display_name}</p>
+                <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
+                <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
+                    現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
+                </p>
+                <h3>📊 總盈虧</h3>
+                <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
+                    {int(profit):,} 元
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+            """,
+            unsafe_allow_html=True
+        )
 
-if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
     with b2:
         st.markdown("### ⚖️ 即時五檔明細")
         render_order_book(bids, asks, prev_c, curr)
+
+    render_trade_details(trades, prev_c)
