@@ -336,13 +336,160 @@ def fetch_history(symbol, period, interval):
 
 @st.cache_data(ttl=10)
 def fetch_intraday(symbol, suffix):
-    df_i = flatten_columns(yf.download(f"{symbol}{suffix}", period="5d", interval="1m", progress=False, threads=False, auto_adjust=False))
+    df_i = flatten_columns(
+        yf.download(
+            f"{symbol}{suffix}",
+            period="5d",
+            interval="1m",
+            progress=False,
+            threads=False,
+            auto_adjust=False
+        )
+    )
+
     if not df_i.empty:
         df_i = df_i.dropna(subset=["Close"])
         df_i.index = df_i.index.tz_convert("Asia/Taipei") if df_i.index.tz else df_i.index.tz_localize("Asia/Taipei")
         df_i = df_i[df_i.index.date == df_i.index.date.max()]
+
     return df_i
 
+
+def resample_ohlcv(df, rule):
+    """
+    將 1分K 重新合成 3分K / 5分K / 15分K / 30分K / 60分K。
+    會補齊沒有成交的空白K：
+    Open / High / Low / Close = 前一根 Close
+    Volume = 0
+    """
+    if df is None or df.empty:
+        return df
+
+    df = df.copy()
+
+    # 確保 index 是 datetime
+    idx = pd.to_datetime(df.index, errors="coerce")
+
+    # 如果還有時區，轉台灣時間後移除時區
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_convert("Asia/Taipei").tz_localize(None)
+
+    df.index = idx
+    df = df[~df.index.isna()].sort_index()
+
+    # 確保 OHLCV 是數字
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace(" ", "", regex=False)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    if df.empty:
+        return df
+
+    # 只保留台股盤中時間
+    df = df.between_time("09:00", "13:30")
+
+    if df.empty:
+        return df
+
+    all_sessions = []
+
+    # 逐日處理，避免跨日補出夜盤空白K
+    for trade_date, day_df in df.groupby(df.index.date):
+        day_df = day_df.sort_index()
+
+        if day_df.empty:
+            continue
+
+        # 依指定週期重新合成K棒，從每天 09:00 對齊
+        resampled = day_df.resample(
+            rule,
+            origin="start_day",
+            offset="9h"
+        ).agg({
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum"
+        })
+
+        # 建立該交易日完整時間軸
+        start_time = pd.Timestamp(trade_date).replace(hour=9, minute=0)
+        end_time = pd.Timestamp(trade_date).replace(hour=13, minute=30)
+
+        full_index = pd.date_range(
+            start=start_time,
+            end=end_time,
+            freq=rule
+        )
+
+        resampled = resampled.reindex(full_index)
+
+        # 先用前一根 Close 補 Close
+        resampled["Close"] = resampled["Close"].ffill()
+
+        # 沒成交的K棒，用前一根 Close 補 OHLC
+        resampled["Open"] = resampled["Open"].fillna(resampled["Close"])
+        resampled["High"] = resampled["High"].fillna(resampled["Close"])
+        resampled["Low"] = resampled["Low"].fillna(resampled["Close"])
+        resampled["Volume"] = resampled["Volume"].fillna(0)
+
+        # 如果當天最前面沒有任何價格，刪掉
+        resampled = resampled.dropna(subset=["Open", "High", "Low", "Close"])
+
+        all_sessions.append(resampled)
+
+    if not all_sessions:
+        return df
+
+    result = pd.concat(all_sessions).sort_index()
+
+    return result
+
+    # 確保 index 是 datetime
+    idx = pd.to_datetime(df.index, errors="coerce")
+
+    # 如果還有時區，轉台灣時間後移除時區
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_convert("Asia/Taipei").tz_localize(None)
+
+    df.index = idx
+    df = df[~df.index.isna()].sort_index()
+
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace(" ", "", regex=False)
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    if df.empty:
+        return df
+
+    resampled = df.resample(rule).agg({
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+        "Volume": "sum"
+    })
+
+    resampled = resampled.dropna(subset=["Open", "High", "Low", "Close"])
+
+    return resampled
 @st.cache_data(ttl=3600)
 def fetch_fundamentals(symbol, suffix):
     try:
@@ -768,19 +915,150 @@ df_i_for_summary = fetch_intraday(symbol, suffix)
 # 📊 K線分析
 # =====================
 if page == "📊 K線分析":
-    st.markdown(f"## 📊 {display_name}")
+
+    st.markdown("""
+    <style>
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(0, 229, 255, 0.14), transparent 28%),
+            radial-gradient(circle at top right, rgba(168, 85, 247, 0.14), transparent 30%),
+            linear-gradient(135deg, #020617 0%, #030712 45%, #050816 100%);
+        color: #e5e7eb;
+    }
+
+    .block-container {
+        max-width: 1680px;
+        padding-top: 1.2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    
+    .stock-hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 28px 30px;
+        margin: 10px 0 18px 0;
+        border-radius: 22px;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        box-shadow: 0 0 30px rgba(56, 189, 248, 0.12);
+    }
+
+    .stock-title {
+        font-size: 38px;
+        font-weight: 900;
+        color: #f8fafc;
+    }
+
+    .stock-subtitle {
+        margin-top: 6px;
+        font-size: 15px;
+        color: #94a3b8;
+    }
+
+    .stock-price {
+        text-align: right;
+    }
+
+    .price-main {
+        font-size: 38px;
+        font-weight: 900;
+        color: #fb7185;
+    }
+
+    .price-sub {
+        font-size: 13px;
+        color: #94a3b8;
+    }
+
+    .card {
+        padding: 18px 20px;
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.96));
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            0 0 22px rgba(15, 23, 42, 0.8);
+    }
+
+    .card:hover {
+        border-color: rgba(56, 189, 248, 0.55);
+        box-shadow: 0 0 28px rgba(56, 189, 248, 0.18);
+    }
+
+    hr {
+        border-color: rgba(148, 163, 184, 0.15);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    hero_price = curr if curr is not None and not pd.isna(curr) else df["Close"].iloc[-1]
+    
+    st.markdown(f"""
+    <div class="stock-hero">
+        <div>
+            <div class="stock-title">📊 {display_name}</div>
+            <div class="stock-subtitle">K線分析・技術指標・趨勢判讀</div>
+        </div>
+        <div class="stock-price">
+            <div class="price-main">{hero_price:.2f}</div>
+            <div class="price-sub">即時價格</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # 移除多餘的 K線週期選單，僅保留顯示範圍與技術指標選單
     k_col1, k_col2 = st.columns(2)
     with k_col1:
         k_range = st.selectbox(
             "📏 K線顯示範圍",
-            [f"還原{time_unit}", "最近50根", "最近100根", "最近150根", "最近200根", "最近300根"]
+            [f"還原{time_unit}", "最近50根", "最近100根", "最近150根", "最近200根", "最近300根"],
+            index=3
         )
     with k_col2:
         tech_inds = st.multiselect("📈 技術指標", ["KD", "MACD", "RSI", "布林通道"])
+   
+    if df is None or df.empty:
+        st.warning(f"⚠️ 目前 {tf_label} 沒有取得 K線資料，請切換週期或重新整理。")
+        st.stop()
 
-    # 預先計算指標（在原本的 df 上計算，確保均線、EMA 與 RSI 等指標數值連續且精準）
+    # 確保分線 / 日線時間軸格式正確
+    df = df.copy()
+
+    # 將 index 轉成 datetime
+    idx = pd.to_datetime(df.index, errors="coerce")
+
+    # 如果資料是 UTC / 有時區，轉成台灣時間
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_convert("Asia/Taipei").tz_localize(None)
+
+    df.index = idx
+    df = df[~df.index.isna()].sort_index()
+    
+    # 確保 OHLCV 都是數字
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+    if df.empty:
+        st.warning(f"⚠️ {tf_label} 資料格式轉換後沒有可顯示的 K線資料。")
+        st.stop()
+        
+    # 分K重新合成 K棒
+    intraday_resample_map = {
+        "3分K": "3min",
+        "5分K": "5min",
+        "15分K": "15min",
+        "30分K": "30min",
+        "60分K": "60min",
+    }
+
+    if tf_label in intraday_resample_map:
+        df = resample_ohlcv(df, intraday_resample_map[tf_label])
+    # 預先計算指標（在重新合成後的 df 上計算，確保均線、EMA 與 RSI 等指標數值連續且精準）
     df_calc = df.copy()
 
     # 先算好均線，避免切片後前段出現 NaN
@@ -789,9 +1067,18 @@ if page == "📊 K線分析":
     df_calc['MA20'] = df_calc['Close'].rolling(20).mean()
 
     # 計算 KD
-    df_calc['9H'] = df_calc['High'].rolling(9).max()
-    df_calc['9L'] = df_calc['Low'].rolling(9).min()
-    df_calc['RSV'] = (df_calc['Close'] - df_calc['9L']) / (df_calc['9H'] - df_calc['9L']) * 100
+    df_calc['9H'] = pd.to_numeric(df_calc['High'], errors="coerce").rolling(9).max()
+    df_calc['9L'] = pd.to_numeric(df_calc['Low'], errors="coerce").rolling(9).min()
+
+    rsv_den = (df_calc['9H'] - df_calc['9L']).replace(0, float("nan"))
+
+    df_calc['RSV'] = (
+        (pd.to_numeric(df_calc['Close'], errors="coerce") - df_calc['9L']) 
+        / rsv_den 
+        * 100
+    )
+
+    df_calc['RSV'] = pd.to_numeric(df_calc['RSV'], errors="coerce")
     df_calc['K'] = df_calc['RSV'].ewm(com=2, adjust=False).mean()
     df_calc['D'] = df_calc['K'].ewm(com=2, adjust=False).mean()
 
@@ -866,8 +1153,23 @@ if page == "📊 K線分析":
 
     # Row 1: 主 K 線與均線、成本線、現價線
     fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["Open"], high=df_k["High"], low=df_k["Low"], close=df_k["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
-    if cost > 0:
-        fig.add_trace(go.Scatter(x=df_k.index, y=[cost] * len(df_k), mode="lines", name="成本線", line=dict(color="cyan", width=2, dash="dash")), row=1, col=1)
+    if cost > 0 and not df_k.empty:
+        price_high = df_k["High"].max()
+        price_low = df_k["Low"].min()
+
+        # 成本線距離目前價格區間太遠時，不畫，避免壓扁K線圖
+        if price_low * 0.8 <= cost <= price_high * 1.2:
+            fig.add_trace(
+                go.Scatter(
+                    x=df_k.index,
+                    y=[cost] * len(df_k),
+                    mode="lines",
+                    name="成本線",
+                    line=dict(color="cyan", width=2, dash="dash")
+                ),
+                row=1,
+                col=1
+            )
     fig.add_trace(go.Scatter(x=df_k.index, y=[curr] * len(df_k), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
     
     # K線均線 (改用切片前算好的數值)
@@ -916,29 +1218,77 @@ if page == "📊 K線分析":
     # 動態圖表高度
     chart_height = 700 + 150 * num_extra
     
-    # 設定 X 軸日期/時間格式 (排除英文月份)
-    if tf_label in ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K"]:
-        dt_format = "%H:%M"
+    
+    # 設定 X 軸日期/時間格式   
+    is_intraday = tf_label in ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K"]
+    
+    idx_dt = pd.to_datetime(df_k.index, errors="coerce")
+
+    if isinstance(idx_dt, pd.DatetimeIndex):
+        has_time = not ((idx_dt.hour == 0) & (idx_dt.minute == 0)).all()
+    else:
+        has_time = False
+        
+    if is_intraday and has_time:
+        dt_format = "%m/%d<br>%H:%M"
     else:
         dt_format = "%Y/%m/%d"
+        
+    # 分線強制使用真實資料時間當 X 軸刻度，避免 Plotly 自動顯示 00:00
+    tickvals = None
+    ticktext = None
+
+    if is_intraday and has_time and len(df_k.index) > 0:
+        tick_count = 8
+        step = max(len(df_k.index) // tick_count, 1)
+        tickvals = df_k.index[::step]
+
+        ticktext = [
+            t.strftime("%m/%d<br>%H:%M") if hasattr(t, "strftime") else str(t)
+            for t in tickvals
+        ]
     
     fig.update_layout(
         template="plotly_dark",
         height=chart_height,
         xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=20, b=10),
-        legend=dict(orientation="h"),
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(color="#cbd5e1")
+        ),
         hovermode="x unified",
-        paper_bgcolor="#000",
-        plot_bgcolor="#000",
-        dragmode="pan"
+        paper_bgcolor="rgba(2, 6, 23, 0)",
+        plot_bgcolor="rgba(2, 6, 23, 0.88)",
+        dragmode="pan",
+        font=dict(color="#e5e7eb")
     )
-    
-    # 套用 X 軸純數字格式與 hover
-    fig.update_xaxes(gridcolor="#111", tickformat=dt_format, hoverformat=dt_format)
-    fig.update_yaxes(side="right", gridcolor="#111")
 
-       # Plotly 顯示設定，設定工具列按鈕與防滾輪縮放
+    fig.update_xaxes(
+        type="category" if is_intraday else "date",
+        gridcolor="rgba(148, 163, 184, 0.10)",
+        tickformat=dt_format,
+        hoverformat=dt_format,
+        zeroline=False,
+        linecolor="rgba(148, 163, 184, 0.18)",
+        nticks=8,
+        tickangle=0,
+        tickvals=tickvals,
+        ticktext=ticktext
+    )
+
+    fig.update_yaxes(
+        side="right",
+        gridcolor="rgba(148, 163, 184, 0.10)",
+        zeroline=False,
+        linecolor="rgba(148, 163, 184, 0.18)"
+    )
+
+    # Plotly 顯示設定，設定工具列按鈕與防滾輪縮放
     st.plotly_chart(
         fig,
         use_container_width=True,
