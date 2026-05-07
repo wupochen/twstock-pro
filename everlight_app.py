@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import os
+import uuid
+import json
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
@@ -167,7 +169,7 @@ c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2.5])
 with c1:
     page = st.radio(
         "📌 頁面切換",
-        ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"],
+        ["📊 K線分析", "⚡ 即時趨勢", "🤖 AI綜合預測", "📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略","🔐 管理後台"],
         horizontal=True
     )
 
@@ -197,7 +199,32 @@ with c2:
             symbol, stock_name = fuzzy
 
     display_name = f"{symbol} {stock_name}"
+    
+# =====================
+# 使用者查詢紀錄
+# =====================
+LOG_FILE = "visitor_stock_log.jsonl"
 
+if "visitor_id" not in st.session_state:
+    st.session_state["visitor_id"] = str(uuid.uuid4())[:8]
+
+def log_stock_view(page, symbol, stock_name, tf_label=""):
+    try:
+        record = {
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "visitor_id": st.session_state.get("visitor_id", "unknown"),
+            "page": page,
+            "symbol": symbol,
+            "stock_name": stock_name,
+            "tf_label": tf_label
+        }
+
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    except Exception:
+        pass
+    
 with c3:
     tf_label = st.selectbox(
         "📈 K線週期",
@@ -244,7 +271,17 @@ with c3:
     tf = tf_map[tf_label]
     period = period_map[tf_label]
     time_unit = time_unit_map[tf_label]
+    
+    current_log_key = f"{page}|{symbol}|{stock_name}|{tf_label}"
 
+    if st.session_state.get("last_log_key") != current_log_key:
+        log_stock_view(
+            page=page,
+            symbol=symbol,
+            stock_name=stock_name,
+            tf_label=tf_label
+        )
+        st.session_state["last_log_key"] = current_log_key
     ma1, ma2, ma3 = st.columns(3)
     with ma1:
         show_ma5 = st.checkbox("5線", True)
@@ -2467,33 +2504,130 @@ elif page == "🎯 操作策略":
             
         st.markdown("<br><div style='text-align:center; color:#ff3b3b; font-size:14px; background:#2a0a0a; padding:10px; border-radius:5px;'>⚠️ 本頁為規則型量化整理，僅供觀察參考，不構成任何買賣建議。</div>", unsafe_allow_html=True)
 
+        
+# =====================
+# 🔐 管理後台
+# =====================
+elif page == "🔐 管理後台":
+    st.markdown("## 🔐 使用紀錄後台")
+
+    admin_pwd = st.text_input("請輸入管理密碼", type="password")
+    ADMIN_PASSWORD = read_secret_safe("ADMIN_PASSWORD", "1234")
+
+    if admin_pwd == ADMIN_PASSWORD:
+        try:
+            logs = []
+
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    logs.append(json.loads(line))
+
+            if not logs:
+                st.info("目前沒有使用紀錄")
+            else:
+                log_df = pd.DataFrame(logs)
+
+                symbol_count = log_df["symbol"].value_counts().to_dict()
+                stock_name_count = log_df["stock_name"].value_counts().to_dict()
+
+                log_df["股票代號累積次數"] = log_df["symbol"].map(symbol_count)
+                log_df["股票名稱累積次數"] = log_df["stock_name"].map(stock_name_count)
+
+                display_df = log_df.rename(columns={
+                    "time": "時間",
+                    "visitor_id": "匿名訪客ID",
+                    "page": "頁面",
+                    "symbol": "股票代號",
+                    "stock_name": "股票名稱",
+                    "tf_label": "K線週期"
+                })
+
+                display_df = display_df[
+                    [
+                        "時間",
+                        "匿名訪客ID",
+                        "頁面",
+                        "股票代號",
+                        "股票代號累積次數",
+                        "股票名稱",
+                        "股票名稱累積次數",
+                        "K線週期"
+                    ]
+                ]
+
+                st.markdown("### 📊 使用概況")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("總紀錄數", len(log_df))
+                c2.metric("匿名訪客數", log_df["visitor_id"].nunique())
+                c3.metric("查詢股票數", log_df["symbol"].nunique())
+
+                st.markdown("### 🔥 股票代號查詢排行")
+
+                symbol_rank = (
+                    log_df.groupby(["symbol", "stock_name"])
+                    .size()
+                    .reset_index(name="累積次數")
+                    .sort_values("累積次數", ascending=False)
+                )
+
+                symbol_rank = symbol_rank.rename(columns={
+                    "symbol": "股票代號",
+                    "stock_name": "股票名稱"
+                })
+
+                st.dataframe(symbol_rank, use_container_width=True)
+
+                st.markdown("### 📌 頁面觀看排行")
+
+                page_rank = log_df["page"].value_counts().reset_index()
+                page_rank.columns = ["頁面", "累積次數"]
+
+                st.dataframe(page_rank, use_container_width=True)
+
+                st.markdown("### 🧾 最近使用紀錄")
+
+                st.dataframe(
+                    display_df.sort_values("時間", ascending=False),
+                    use_container_width=True
+                )
+
+        except Exception as e:
+            st.warning(f"目前沒有紀錄，或讀取失敗：{e}")
+
+    else:
+        st.info("請輸入管理密碼")
+
+
+
+
 # =====================
 # 底部資訊 (全頁共用)
 # =====================
-st.markdown("---")
-b1, b2 = st.columns([4, 6])
+if page != "🔐 管理後台":
+    st.markdown("---")
+    b1, b2 = st.columns([4, 6])
 
-with b1:
-    pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
-    st.markdown(
-        f"""
-        <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
-            <h3>💰 庫存狀態</h3>
-            <p style='color:#aaa;'>{display_name}</p>
-            <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
-            <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
-                現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
-            </p>
-            <h3>📊 總盈虧</h3>
-            <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
-                {int(profit):,} 元
+    with b1:
+        pnl_c = "#ff3b3b" if profit > 0 else "#00e676" if profit < 0 else "#fff"
+        st.markdown(
+            f"""
+            <div style='background:#111; padding:20px; border-radius:10px; border:1px solid #333; height:100%;'>
+                <h3>💰 庫存狀態</h3>
+                <p style='color:#aaa;'>{display_name}</p>
+                <p style='color:#aaa;'>成本：{cost:.2f} ｜ 張數：{qty:.0f}</p>
+                <p style='font-size:24px; color:{price_color(curr, prev_c)}; font-weight:bold;'>
+                    現價：{curr:.2f} <span style='font-size:18px;'>({diff:+.2f} / {pct:+.2f}%)</span>
+                </p>
+                <h3>📊 總盈虧</h3>
+                <div style='font-size:42px; font-weight:bold; color:{pnl_c};'>
+                    {int(profit):,} 元
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+            """,
+            unsafe_allow_html=True
+        )
 
-if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
-    with b2:
-        st.markdown("### ⚖️ 即時五檔明細")
-        render_order_book(bids, asks, prev_c, curr)
+    if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
+        with b2:
+            st.markdown("### ⚖️ 即時五檔明細")
+            render_order_book(bids, asks, prev_c, curr)
