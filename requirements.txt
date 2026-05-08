@@ -1,7 +1,5 @@
 streamlit
-yfinance
 pandas
-plotly
 requests
-feedparser
-streamlit-autorefresh
+altair
+apscheduler
