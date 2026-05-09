@@ -384,6 +384,10 @@ def fetch_history(symbol, period, interval):
 
 @st.cache_data(ttl=10)
 def fetch_intraday(symbol, suffix):
+    """
+    取得最近一個有 1 分 K 資料的交易日。
+    收盤後、晚上、假日也保留最近交易日盤中走勢，不讓即時走勢變空白。
+    """
     df_i = flatten_columns(
         yf.download(
             f"{symbol}{suffix}",
@@ -395,10 +399,27 @@ def fetch_intraday(symbol, suffix):
         )
     )
 
-    if not df_i.empty:
-        df_i = df_i.dropna(subset=["Close"])
-        df_i.index = df_i.index.tz_convert("Asia/Taipei") if df_i.index.tz else df_i.index.tz_localize("Asia/Taipei")
-        df_i = df_i[df_i.index.date == df_i.index.date.max()]
+    if df_i.empty:
+        return df_i
+
+    df_i = df_i.dropna(subset=["Close"])
+
+    if df_i.empty:
+        return df_i
+
+    # 轉成台灣時間
+    df_i.index = (
+        df_i.index.tz_convert("Asia/Taipei")
+        if df_i.index.tz
+        else df_i.index.tz_localize("Asia/Taipei")
+    )
+
+    # 排序，避免資料順序亂掉
+    df_i = df_i.sort_index()
+
+    # 只保留最近一個「有資料」的交易日
+    latest_trade_date = df_i.index.date.max()
+    df_i = df_i[df_i.index.date == latest_trade_date]
 
     return df_i
 
@@ -1373,6 +1394,10 @@ elif page == "⚡ 即時趨勢":
     st.markdown(f"## ⚡ {display_name} 即時走勢")
     if not df_i_for_summary.empty:
         df_i = df_i_for_summary.copy()
+
+        show_date = pd.to_datetime(df_i.index[-1]).strftime("%Y-%m-%d")
+        st.caption(f"目前顯示最近交易日盤中走勢：{show_date}，收盤後會保留最後盤中線圖。")
+        
         now_ts = pd.Timestamp.now(tz="Asia/Taipei").floor("min")
         if "High" not in df_i.columns:
             df_i["High"] = df_i["Close"]
