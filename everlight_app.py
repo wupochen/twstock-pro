@@ -1398,12 +1398,36 @@ elif page == "⚡ 即時趨勢":
         show_date = pd.to_datetime(df_i.index[-1]).strftime("%Y-%m-%d")
         st.caption(f"目前顯示最近交易日盤中走勢：{show_date}，收盤後會保留最後盤中線圖。")
         
+                latest_trade_date = df_i.index[-1].date()
         now_ts = pd.Timestamp.now(tz="Asia/Taipei").floor("min")
+
         if "High" not in df_i.columns:
             df_i["High"] = df_i["Close"]
         if "Low" not in df_i.columns:
             df_i["Low"] = df_i["Close"]
-        df_plot = pd.concat([df_i, pd.DataFrame([[df_i["Open"].iloc[-1] if not df_i.empty else curr, curr, curr, curr, 0]], columns=["Open", "High", "Low", "Close", "Volume"], index=[now_ts])]).sort_index()
+
+        # 只有在「今天就是最近交易日」而且「盤中時間」才補現在價格
+        # 收盤後、晚上、假日不要硬塞 now_ts，避免圖表日期被拉歪
+        is_same_trade_day = now_ts.date() == latest_trade_date
+        is_market_time = now_ts.time() >= pd.Timestamp("09:00").time() and now_ts.time() <= pd.Timestamp("13:30").time()
+
+        if is_same_trade_day and is_market_time:
+            df_now = pd.DataFrame(
+                [[
+                    df_i["Open"].iloc[-1] if not df_i.empty else curr,
+                    curr,
+                    curr,
+                    curr,
+                    0
+                ]],
+                columns=["Open", "High", "Low", "Close", "Volume"],
+                index=[now_ts]
+            )
+
+            df_plot = pd.concat([df_i, df_now]).sort_index()
+        else:
+            df_plot = df_i.copy()
+
         df_plot = df_plot[~df_plot.index.duplicated(keep="last")]
         df_plot["VWAP"] = (df_plot["Close"] * df_plot["Volume"]).cumsum() / df_plot["Volume"].cumsum().replace(0, pd.NA)
         df_plot["VWAP"] = df_plot["VWAP"].bfill().fillna(df_plot["Close"])
@@ -1520,8 +1544,14 @@ elif page == "⚡ 即時趨勢":
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["VWAP"], mode="lines", name="均價", line=dict(color="white", width=1.5, dash="dot"), hoverinfo="skip"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=[prev_c] * len(df_plot), mode="lines", name="昨收", line=dict(color="#777", dash="dash"), hoverinfo="skip"), row=1, col=1)
         fig.add_trace(go.Bar(x=df_plot.index, y=df_plot["Volume"], name="分量", marker_color=v_colors, customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>量:</b> %{y:,.0f}<extra></extra>"), row=2, col=1)
-        today = df_plot.index[-1].date()
-        fig.update_xaxes(range=[pd.Timestamp(f"{today} 09:00", tz="Asia/Taipei"), pd.Timestamp(f"{today} 13:30", tz="Asia/Taipei")], tickformat="%H:%M")
+        plot_date = latest_trade_date
+        fig.update_xaxes(
+            range=[
+                pd.Timestamp(f"{plot_date} 09:00", tz="Asia/Taipei"),
+                pd.Timestamp(f"{plot_date} 13:30", tz="Asia/Taipei")
+            ],
+            tickformat="%H:%M"
+        )
         fig.update_layout(template="plotly_dark", height=650, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000", dragmode=False) # 關閉手機拖曳
         
         fig.update_xaxes(gridcolor="#111", showspikes=True, spikemode="across", spikesnap="cursor", showline=False, spikedash="solid", fixedrange=True) # 鎖定 X 軸縮放
