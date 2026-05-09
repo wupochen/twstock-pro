@@ -1,6 +1,7 @@
 # Streamlit Cloud Secrets 設定參考：
 # FINMIND_TOKEN = "你的 FinMind Token"
-# FUGLE_API = "你的 Fugle Token"
+# FUGLE_TOKEN = "你的 Fugle Token"
+# ADMIN_PASSWORD = "你自訂的後台密碼"
 
 import streamlit as st
 import yfinance as yf
@@ -84,7 +85,7 @@ def find_local_token(filename):
     return ""
 
 FINMIND_TOKEN = read_secret_safe("FINMIND_TOKEN", "") or find_local_token("finmind_token.txt")
-FUGLE_SECRET = read_secret_safe("FUGLE_API", "") or find_local_token("fugle_token.txt")
+FUGLE_TOKEN = read_secret_safe("FUGLE_TOKEN", "") or find_local_token("fugle_token.txt")
 
 # 本機測試防呆：如果讀不到 finmind_token.txt，就在網頁上手動貼一次測試
 if not FINMIND_TOKEN:
@@ -224,87 +225,91 @@ def log_stock_view(page, symbol, stock_name, tf_label=""):
 
     except Exception:
         pass
-    
+
+tf_map = {
+    "1分K": "1m",
+    "3分K": "3m_custom",
+    "5分K": "5m",
+    "15分K": "15m",
+    "30分K": "30m",
+    "60分K": "60m",
+    "日K": "1d",
+    "週K": "1wk",
+    "月K": "1mo",
+}
+
+period_map = {
+    "1分K": "5d",
+    "3分K": "5d",
+    "5分K": "60d",
+    "15分K": "60d",
+    "30分K": "60d",
+    "60分K": "730d",
+    "日K": "1y",
+    "週K": "5y",
+    "月K": "10y",
+}
+
+time_unit_map = {
+    "1分K": "1分線",
+    "3分K": "3分線",
+    "5分K": "5分線",
+    "15分K": "15分線",
+    "30分K": "30分線",
+    "60分K": "60分線",
+    "日K": "日線",
+    "週K": "週線",
+    "月K": "月線",
+}
+
+# 預設值，避免其他頁面報錯
+tf_label = "日K"
+show_ma5 = show_ma10 = show_ma20 = True
+qty = 1.0
+cost = 50.0
+
 with c3:
-    tf_label = st.selectbox(
-        "📈 K線週期",
-        ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
-        index=6
-    )
+    if page == "📊 K線分析":
+        tf_label = st.selectbox(
+            "📈 K線週期",
+            ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K", "日K", "週K", "月K"],
+            index=6
+        )
 
-    tf_map = {
-        "1分K": "1m",
-        "3分K": "3m_custom",
-        "5分K": "5m",
-        "15分K": "15m",
-        "30分K": "30m",
-        "60分K": "60m",
-        "日K": "1d",
-        "週K": "1wk",
-        "月K": "1mo",
-    }
+        ma1, ma2, ma3 = st.columns(3)
+        with ma1:
+            show_ma5 = st.checkbox("5線", True)
+        with ma2:
+            show_ma10 = st.checkbox("10線", True)
+        with ma3:
+            show_ma20 = st.checkbox("20線", True)
 
-    period_map = {
-        "1分K": "5d",
-        "3分K": "5d",
-        "5分K": "60d",
-        "15分K": "60d",
-        "30分K": "60d",
-        "60分K": "730d",
-        "日K": "1y",
-        "週K": "5y",
-        "月K": "10y",
-    }
+tf = tf_map[tf_label]
+period = period_map[tf_label]
+time_unit = time_unit_map[tf_label]
 
-    time_unit_map = {
-        "1分K": "1分線",
-        "3分K": "3分線",
-        "5分K": "5分線",
-        "15分K": "15分線",
-        "30分K": "30分線",
-        "60分K": "60分線",
-        "日K": "日線",
-        "週K": "週線",
-        "月K": "月線",
-    }
+if page != "🔐 管理後台":
+    current_log_key = f"{page}|{symbol}|{stock_name}|{tf_label}"
 
-    tf = tf_map[tf_label]
-    period = period_map[tf_label]
-    time_unit = time_unit_map[tf_label]
-    
-    if page != "🔐 管理後台":
-        current_log_key = f"{page}|{symbol}|{stock_name}|{tf_label}"
+    if st.session_state.get("last_log_key") != current_log_key:
+        log_stock_view(
+            page=page,
+            symbol=symbol,
+            stock_name=stock_name,
+            tf_label=tf_label
+        )
+        st.session_state["last_log_key"] = current_log_key
 
-        if st.session_state.get("last_log_key") != current_log_key:
-            log_stock_view(
-                page=page,
-                symbol=symbol,
-                stock_name=stock_name,
-                tf_label=tf_label
-            )
-            st.session_state["last_log_key"] = current_log_key
-    ma1, ma2, ma3 = st.columns(3)
-    with ma1:
-        show_ma5 = st.checkbox("5線", True)
-    with ma2:
-        show_ma10 = st.checkbox("10線", True)
-    with ma3:
-        show_ma20 = st.checkbox("20線", True)
+# 隱藏 FUGLE_TOKEN 輸入，直接帶入 Secret
+api_key = FUGLE_TOKEN
 
-with c4:
-    api_key = st.text_input("🔑 Fugle Token", value=FUGLE_SECRET, type="password")
-    if api_key and api_key != FUGLE_SECRET and not read_secret_safe("FUGLE_API", ""):
-        try:
-            with open("fugle_token.txt", "w", encoding="utf-8") as f:
-                f.write(api_key)
-        except Exception:
-            pass
-
-p1, p2 = st.columns(2)
-with p1:
-    qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
-with p2:
-    cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
+if page == "📊 K線分析":
+    with c4:
+        p1, p2 = st.columns(2)
+        with p1:
+            qty = st.number_input("📦 持股張數", value=1.0, min_value=0.0, step=1.0)
+        with p2:
+            cost = st.number_input("💰 平均成本", value=50.0, min_value=0.0, step=0.1)
 
 # 關閉自動刷新，避免 Streamlit 前端 removeChild 錯誤
 if st.button("🔄 手動刷新"):
@@ -497,42 +502,6 @@ def resample_ohlcv(df, rule):
 
     return result
 
-    # 確保 index 是 datetime
-    idx = pd.to_datetime(df.index, errors="coerce")
-
-    # 如果還有時區，轉台灣時間後移除時區
-    if getattr(idx, "tz", None) is not None:
-        idx = idx.tz_convert("Asia/Taipei").tz_localize(None)
-
-    df.index = idx
-    df = df[~df.index.isna()].sort_index()
-
-    for col in ["Open", "High", "Low", "Close", "Volume"]:
-        if col in df.columns:
-            df[col] = (
-                df[col]
-                .astype(str)
-                .str.replace(",", "", regex=False)
-                .str.replace(" ", "", regex=False)
-            )
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df = df.dropna(subset=["Open", "High", "Low", "Close"])
-
-    if df.empty:
-        return df
-
-    resampled = df.resample(rule).agg({
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-        "Volume": "sum"
-    })
-
-    resampled = resampled.dropna(subset=["Open", "High", "Low", "Close"])
-
-    return resampled
 @st.cache_data(ttl=3600)
 def fetch_fundamentals(symbol, suffix):
     try:
@@ -641,16 +610,10 @@ def fetch_institutional_chips(symbol, finmind_token):
 
         df = pd.DataFrame(data)
 
-        print("三大法人原始欄位:", df.columns.tolist())
-        if "name" in df.columns:
-            print("FinMind 法人名稱清單:", df["name"].unique().tolist())
-
         if "date" not in df.columns:
-            print(f"三大法人找不到 date 欄位，目前欄位: {df.columns.tolist()}")
             return res_df
 
         if "name" not in df.columns:
-            print(f"三大法人找不到 name 欄位，目前欄位: {df.columns.tolist()}")
             return res_df
 
         if "buy_sell" in df.columns:
@@ -666,7 +629,6 @@ def fetch_institutional_chips(symbol, finmind_token):
                 - pd.to_numeric(df["sell_volume"], errors="coerce")
             )
         else:
-            print(f"三大法人找不到買賣超欄位，目前欄位: {df.columns.tolist()}")
             return res_df
 
         df["net"] = df["net"].fillna(0)
@@ -678,41 +640,19 @@ def fetch_institutional_chips(symbol, finmind_token):
             n_str = str(n).strip()
             n_low = n_str.lower()
 
-            if (
-                "外資" in n_str
-                or "外陸資" in n_str
-                or "foreign" in n_low
-                or "foreign_investor" in n_low
-                or "foreign investor" in n_low
-            ):
+            if ("外資" in n_str or "外陸資" in n_str or "foreign" in n_low or "foreign_investor" in n_low or "foreign investor" in n_low):
                 return "外資"
-
-            if (
-                "投信" in n_str
-                or "investment_trust" in n_low
-                or "investment trust" in n_low
-                or "trust" in n_low
-            ):
+            if ("投信" in n_str or "investment_trust" in n_low or "investment trust" in n_low or "trust" in n_low):
                 return "投信"
-
-            if (
-                "自營商" in n_str
-                or "dealer" in n_low
-                or "dealer_self" in n_low
-                or "dealer_hedging" in n_low
-            ):
+            if ("自營商" in n_str or "dealer" in n_low or "dealer_self" in n_low or "dealer_hedging" in n_low):
                 return "自營商"
-
             return "其他"
 
         df["type"] = df["name"].apply(classify_name)
 
-        print("分類結果:", df[["name", "type"]].drop_duplicates().to_dict("records"))
-
         df = df[df["type"] != "其他"]
 
         if df.empty:
-            print("三大法人資料有回傳，但分類後沒有外資 / 投信 / 自營商資料")
             return res_df
 
         pivot_df = (
@@ -774,13 +714,11 @@ def fetch_margin_chips(symbol, finmind_token):
         df = pd.DataFrame(data)
 
         if "date" not in df.columns:
-            print(f"融資融券找不到 date 欄位，目前欄位: {df.columns.tolist()}")
             return res_df
 
         df = df.sort_values("date", ascending=True)
 
         if "MarginPurchaseTodayBalance" not in df.columns or "ShortSaleTodayBalance" not in df.columns:
-            print(f"融資融券找不到目標欄位，目前欄位: {df.columns.tolist()}")
             return res_df
 
         df["融資餘額"] = pd.to_numeric(
@@ -870,7 +808,10 @@ def donut_chart(title, value, label, color):
     fig.update_layout(template="plotly_dark", height=260, margin=dict(l=5, r=5, t=40, b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", title=dict(text=title, x=0.5, font=dict(size=20, color="#fff")), annotations=[dict(text=f"<b>{value}%</b><br>{label}", x=0.5, y=0.5, showarrow=False, font=dict(size=24, color="#fff"))])
     return fig
 
-def render_order_book(bids, asks, prev_c, curr):
+def render_order_book(bids, asks, prev_c, curr, api_key):
+    if not api_key:
+        st.warning("⚠️ 未設定 FUGLE_TOKEN，無法取得即時五檔資料。")
+        return
     if not bids and not asks:
         st.info("📡 五檔尚未連線或非盤中時間")
         return
@@ -887,8 +828,10 @@ def render_order_book(bids, asks, prev_c, curr):
     st.markdown(f"<div style='background:#050505; padding:12px; border-radius:10px; border:1px solid #222;'><div style='text-align:center; color:#ffcc00; font-size:20px; font-weight:bold; margin-bottom:8px;'>現價 {curr:.2f}</div><table class='order-table'><thead><tr><th>買量</th><th></th><th>買價</th><th></th><th>賣價</th><th></th><th>賣量</th></tr></thead><tbody>{rows}</tbody></table></div>", unsafe_allow_html=True)
 
 
-def render_trade_details(trades, prev_c):
-    st.markdown("### 📜 成交明細")
+def render_trade_details(trades, prev_c, api_key):
+    if not api_key:
+        st.warning("⚠️ 未設定 FUGLE_TOKEN，無法取得成交明細。")
+        return
     if not trades:
         st.info("📡 尚無成交明細資料。")
         return
@@ -1137,7 +1080,6 @@ if page == "📊 K線分析":
         help="手機滑動優先：比較好往下滑；電腦互動模式：可拖動K線與畫線。"
     )
 
-    # 移除多餘的 K線週期選單，僅保留顯示範圍與技術指標選單
     k_col1, k_col2 = st.columns(2)
     with k_col1:
         k_range = st.selectbox(
@@ -1152,20 +1094,16 @@ if page == "📊 K線分析":
         st.warning(f"⚠️ 目前 {tf_label} 沒有取得 K線資料，請切換週期或重新整理。")
         st.stop()
 
-    # 確保分線 / 日線時間軸格式正確
     df = df.copy()
 
-    # 將 index 轉成 datetime
     idx = pd.to_datetime(df.index, errors="coerce")
 
-    # 如果資料是 UTC / 有時區，轉成台灣時間
     if getattr(idx, "tz", None) is not None:
         idx = idx.tz_convert("Asia/Taipei").tz_localize(None)
 
     df.index = idx
     df = df[~df.index.isna()].sort_index()
     
-    # 確保 OHLCV 都是數字
     for col in ["Open", "High", "Low", "Close", "Volume"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -1176,7 +1114,6 @@ if page == "📊 K線分析":
         st.warning(f"⚠️ {tf_label} 資料格式轉換後沒有可顯示的 K線資料。")
         st.stop()
         
-    # 分K重新合成 K棒
     intraday_resample_map = {
         "3分K": "3min",
         "5分K": "5min",
@@ -1187,15 +1124,13 @@ if page == "📊 K線分析":
 
     if tf_label in intraday_resample_map:
         df = resample_ohlcv(df, intraday_resample_map[tf_label])
-    # 預先計算指標（在重新合成後的 df 上計算，確保均線、EMA 與 RSI 等指標數值連續且精準）
+
     df_calc = df.copy()
 
-    # 先算好均線，避免切片後前段出現 NaN
     df_calc['MA5'] = df_calc['Close'].rolling(5).mean()
     df_calc['MA10'] = df_calc['Close'].rolling(10).mean()
     df_calc['MA20'] = df_calc['Close'].rolling(20).mean()
 
-    # 計算 KD
     df_calc['9H'] = pd.to_numeric(df_calc['High'], errors="coerce").rolling(9).max()
     df_calc['9L'] = pd.to_numeric(df_calc['Low'], errors="coerce").rolling(9).min()
 
@@ -1211,26 +1146,22 @@ if page == "📊 K線分析":
     df_calc['K'] = df_calc['RSV'].ewm(com=2, adjust=False).mean()
     df_calc['D'] = df_calc['K'].ewm(com=2, adjust=False).mean()
 
-    # 計算 MACD
     df_calc['EMA12'] = df_calc['Close'].ewm(span=12, adjust=False).mean()
     df_calc['EMA26'] = df_calc['Close'].ewm(span=26, adjust=False).mean()
     df_calc['DIF'] = df_calc['EMA12'] - df_calc['EMA26']
     df_calc['MACD'] = df_calc['DIF'].ewm(span=9, adjust=False).mean()
     df_calc['OSC'] = df_calc['DIF'] - df_calc['MACD']
 
-    # 計算 RSI
     delta = df_calc['Close'].diff()
     gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss
     df_calc['RSI'] = 100 - (100 / (1 + rs))
 
-    # 計算 布林通道
     df_calc['STD20'] = df_calc['Close'].rolling(20).std()
     df_calc['BB_UP'] = df_calc['MA20'] + 2 * df_calc['STD20']
     df_calc['BB_DN'] = df_calc['MA20'] - 2 * df_calc['STD20']
 
-    # 依照選單過濾顯示範圍
     if k_range.startswith("還原"):
         df_k = df_calc.copy()
     else:
@@ -1243,7 +1174,6 @@ if page == "📊 K線分析":
         }
         df_k = df_calc.tail(range_map[k_range]).copy()
 
-    # 顯示最高價、最低價、MA平均價
     st.markdown("---")
     if not df_k.empty:
         high_val = df_k["High"].max()
@@ -1266,11 +1196,9 @@ if page == "📊 K線分析":
     
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 動態計算子圖數量與比例
     extra_subplots = [ind for ind in ["KD", "MACD", "RSI"] if ind in tech_inds]
     num_extra = len(extra_subplots)
 
-    # Base: 主圖佔 5 份，成交量佔 2 份，每一個額外指標佔 2 份
     row_heights = [5, 2] + [2] * num_extra
     fig = make_subplots(
         rows=2 + num_extra, 
@@ -1280,13 +1208,11 @@ if page == "📊 K線分析":
         vertical_spacing=0.02
     )
 
-    # Row 1: 主 K 線與均線、成本線、現價線
     fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["Open"], high=df_k["High"], low=df_k["Low"], close=df_k["Close"], name="K線", increasing_line_color="#ff3b3b", decreasing_line_color="#00e676", increasing_fillcolor="#ff3b3b", decreasing_fillcolor="#00e676"), row=1, col=1)
     if cost > 0 and not df_k.empty:
         price_high = df_k["High"].max()
         price_low = df_k["Low"].min()
 
-        # 成本線距離目前價格區間太遠時，不畫，避免壓扁K線圖
         if price_low * 0.8 <= cost <= price_high * 1.2:
             fig.add_trace(
                 go.Scatter(
@@ -1301,7 +1227,6 @@ if page == "📊 K線分析":
             )
     fig.add_trace(go.Scatter(x=df_k.index, y=[curr] * len(df_k), mode="lines", name="現價線", line=dict(color="yellow", width=2, dash="dot")), row=1, col=1)
     
-    # K線均線 (改用切片前算好的數值)
     if show_ma5:
         fig.add_trace(go.Scatter(x=df_k.index, y=df_k["MA5"], mode="lines", line=dict(color="#FFD700", width=1.5), name="MA5"), row=1, col=1)
     if show_ma10:
@@ -1309,16 +1234,13 @@ if page == "📊 K線分析":
     if show_ma20:
         fig.add_trace(go.Scatter(x=df_k.index, y=df_k["MA20"], mode="lines", line=dict(color="#FF66FF", width=1.5), name="MA20"), row=1, col=1)
 
-    # 布林通道 (疊加在 Row 1)
     if "布林通道" in tech_inds:
         fig.add_trace(go.Scatter(x=df_k.index, y=df_k['BB_UP'], name="上軌", line=dict(color='rgba(255,255,255,0.4)', dash='dot')), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_k.index, y=df_k['BB_DN'], name="下軌", line=dict(color='rgba(255,255,255,0.4)', dash='dot')), row=1, col=1)
 
-    # Row 2: 成交量
     vol_colors = ["rgba(255,59,59,0.5)" if c >= o else "rgba(0,230,118,0.5)" for o, c in zip(df_k["Open"], df_k["Close"])]
     fig.add_trace(go.Bar(x=df_k.index, y=df_k["Volume"], name="成交量", marker_color=vol_colors), row=2, col=1)
 
-    # Row 3+: 附加技術指標
     current_row = 3
     for ind in extra_subplots:
         if ind == "KD":
@@ -1337,18 +1259,14 @@ if page == "📊 K線分析":
             fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,255,255,0.3)", row=current_row, col=1)
         current_row += 1
 
-    # 跳過假日處理
     if tf == "1d":
         dt_obs = df_k.index.strftime("%Y-%m-%d").tolist()
         if len(dt_obs) > 0:
             dt_all = pd.date_range(start=df_k.index[0], end=df_k.index[-1]).strftime("%Y-%m-%d").tolist()
             fig.update_xaxes(rangebreaks=[dict(values=[d for d in dt_all if d not in dt_obs])])
 
-    # 動態圖表高度
     chart_height = 700 + 150 * num_extra
     
-    
-    # 設定 X 軸日期/時間格式   
     is_intraday = tf_label in ["1分K", "3分K", "5分K", "15分K", "30分K", "60分K"]
     
     idx_dt = pd.to_datetime(df_k.index, errors="coerce")
@@ -1363,7 +1281,6 @@ if page == "📊 K線分析":
     else:
         dt_format = "%Y/%m/%d"
         
-    # 分線強制使用真實資料時間當 X 軸刻度，避免 Plotly 自動顯示 00:00
     tickvals = None
     ticktext = None
 
@@ -1379,7 +1296,7 @@ if page == "📊 K線分析":
     
     fig.update_layout(
         template="plotly_dark",
-        height=560,
+        height=chart_height,
         xaxis_rangeslider_visible=False,
         margin=dict(l=6, r=6, t=18, b=8),
         legend=dict(
@@ -1407,17 +1324,18 @@ if page == "📊 K線分析":
         nticks=8,
         tickangle=0,
         tickvals=tickvals,
-        ticktext=ticktext
+        ticktext=ticktext,
+        fixedrange=True if chart_mode == "手機滑動優先" else False
     )
 
     fig.update_yaxes(
         side="right",
         gridcolor="rgba(148, 163, 184, 0.10)",
         zeroline=False,
-        linecolor="rgba(148, 163, 184, 0.18)"
+        linecolor="rgba(148, 163, 184, 0.18)",
+        fixedrange=True if chart_mode == "手機滑動優先" else False
     )
 
-    # Plotly 顯示設定：依照手機 / 電腦模式切換
     if chart_mode == "手機滑動優先":
         plot_config = {
             "scrollZoom": False,
@@ -1499,34 +1417,27 @@ elif page == "⚡ 即時趨勢":
             if vol > 0 and vma > 0:
                 ratio = vol / vma
 
-                # 判斷這根是偏買還是偏賣
                 if close_price >= prev_price_for_surge:
                     direction = "buy"
                 else:
                     direction = "sell"
 
-                # 爆量門檻：大於前10根均量2倍，而且單根量至少300
                 if ratio >= 2 and vol >= 300:
                     if direction == "buy":
                         buy_surge_streak += 1
                         sell_surge_streak = 0
                         surges.append(f"🚀 {dt.strftime('%H:%M')} 爆量買 {ratio:.1f} 倍")
-
                     else:
                         sell_surge_streak += 1
                         buy_surge_streak = 0
                         surges.append(f"💣 {dt.strftime('%H:%M')} 爆量賣 {ratio:.1f} 倍")
 
-                    # 金探號條件：連續3根爆量買，而且價格站上VWAP
                     if buy_surge_streak >= 3 and close_price >= vwap_price:
                         gold_signal = f"🟡 金探號 {dt.strftime('%H:%M')}：連續 {buy_surge_streak} 根爆量買，價格站上均價"
 
-                    # 黑探號條件：連續3根爆量賣，而且價格跌破VWAP
                     if sell_surge_streak >= 3 and close_price < vwap_price:
                         gold_signal = f"⚫ 風險訊號 {dt.strftime('%H:%M')}：連續 {sell_surge_streak} 根爆量賣，價格跌破均價"
-
                 else:
-                    # 沒爆量就不要累積連續訊號
                     buy_surge_streak = 0
                     sell_surge_streak = 0
 
@@ -1586,9 +1497,17 @@ elif page == "⚡ 即時趨勢":
         fig.add_trace(go.Bar(x=df_plot.index, y=df_plot["Volume"], name="分量", marker_color=v_colors, customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>量:</b> %{y:,.0f}<extra></extra>"), row=2, col=1)
         today = df_plot.index[-1].date()
         fig.update_xaxes(range=[pd.Timestamp(f"{today} 09:00", tz="Asia/Taipei"), pd.Timestamp(f"{today} 13:30", tz="Asia/Taipei")], tickformat="%H:%M")
-        fig.update_layout(template="plotly_dark", height=650, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000")
-        fig.update_xaxes(gridcolor="#111", showspikes=True, spikemode="across", spikesnap="cursor", showline=False, spikedash="solid")
-        fig.update_yaxes(side="right", gridcolor="#111")
+        fig.update_layout(template="plotly_dark", height=650, margin=dict(l=10, r=10, t=20, b=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), hovermode="x unified", paper_bgcolor="#000", plot_bgcolor="#000", dragmode=False) # 關閉手機拖曳
+        
+        fig.update_xaxes(gridcolor="#111", showspikes=True, spikemode="across", spikesnap="cursor", showline=False, spikedash="solid", fixedrange=True) # 鎖定 X 軸縮放
+        
+        # 修正即時走勢基準，強制讓 Y 軸以昨收價為中心對稱置中
+        max_deviation = max(abs(df_plot["High"].max() - prev_c), abs(df_plot["Low"].min() - prev_c))
+        max_deviation = max_deviation if max_deviation > 0 else prev_c * 0.01
+        y_max = prev_c + max_deviation * 1.05
+        y_min = prev_c - max_deviation * 1.05
+        fig.update_yaxes(range=[y_min, y_max], side="right", gridcolor="#111", fixedrange=True, row=1, col=1) # 鎖定 Y 軸縮放
+        
         st.plotly_chart(
             fig,
             use_container_width=True,
@@ -1692,9 +1611,6 @@ elif page == "🤖 AI綜合預測":
     m3.markdown(f"<div class='card' style='height:100%; border-top:4px solid #ff3b3b;'><h4 style='color:#ccc; margin-bottom:5px;'>3️⃣ 籌碼五檔</h4><div style='font-size:32px; font-weight:bold; color:#ff3b3b; margin-bottom:10px;'>{cs:.0f}<span style='font-size:14px; color:#888;'> / 100</span></div><p style='color:#bbb; font-size:14px; line-height:1.5;'>觀測最佳五檔買賣壓差、掛單積極度與大戶即時敲單方向。</p></div>", unsafe_allow_html=True)
     m4.markdown(f"<div class='card' style='height:100%; border-top:4px solid #aa00ff;'><h4 style='color:#ccc; margin-bottom:5px;'>4️⃣ 基本面</h4><div style='font-size:32px; font-weight:bold; color:#aa00ff; margin-bottom:10px;'>{fs:.0f}<span style='font-size:14px; color:#888;'> / 100</span></div><p style='color:#bbb; font-size:14px; line-height:1.5;'>評估企業EPS獲利能力、ROE回報率、殖利率防禦及估值高低。</p></div>", unsafe_allow_html=True)
 
-    # =====================
-    # 🧠 籌碼推估：主力 / 外資成本區
-    # =====================
     st.markdown("---")
     st.markdown("### 🧠 籌碼推估：主力 / 外資成本區")
 
@@ -1769,7 +1685,6 @@ elif page == "🤖 AI綜合預測":
             max_p = max(pv, key=pv.get)
             m_max_vol_p = f"{max_p:.2f}"
             
-            # 統計大量成交價在哪些分鐘成交量最大
             minute_vol = {}
             for t in trades:
                 try:
@@ -1778,7 +1693,7 @@ elif page == "🤖 AI綜合預測":
                     tm = format_trade_time(t.get("time", t.get("at", t.get("date", ""))))
 
                     if p == max_p and s > 0 and tm:
-                        minute_key = str(tm)[:5]  # HH:MM
+                        minute_key = str(tm)[:5]
                         minute_vol[minute_key] = minute_vol.get(minute_key, 0) + s
                 except Exception:
                     pass
@@ -1798,9 +1713,6 @@ elif page == "🤖 AI綜合預測":
     c_m1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {m_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>主力狀態</h4><div style='font-size:24px; font-weight:bold; color:{m_status_color}; margin-bottom:10px;'>{m_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>主動買盤：<span style='color:{'#ff3b3b' if buy_pct>0.5 else '#00e676'};'>{buy_pct*100:.1f}%</span></p></div>", unsafe_allow_html=True)
     c_m2.markdown(f"<div class='card' style='height:100%; border-left:4px solid #ffcc00;'><h4 style='color:#ccc; margin-bottom:5px;'>主力疑似成本區</h4><p style='color:#bbb; font-size:15px; margin:5px 0;'>成交量加權均價 (VWAP)：<span style='font-weight:bold; color:#fff;'>{m_vwap}</span> 元<br>大量成交價：<span style='font-weight:bold; color:#fff;'>{m_max_vol_p}</span> 元<br>集中時間：約 <span style='color:#ddd;'>{m_max_vol_times}</span></p></div>", unsafe_allow_html=True)
 
-    # =====================
-    # 🐋 大戶 / 中實戶 / 散戶成交結構
-    # =====================
     st.markdown("---")
     st.markdown("### 🐋 大戶 / 中實戶 / 散戶成交結構")
     st.caption("⚠️ 此為依單筆成交量與成交價變化推估，非交易所真實身分資料。")
@@ -2261,13 +2173,11 @@ elif page == "🎯 操作策略":
     if df.empty:
         st.warning("📡 K線資料不足，無法產生操作策略。")
     else:
-        # 預設與防呆變數
         vwap_val = curr
         buy_pct_val = 0.5
         max_vol_p = curr
         whale_net = 0
         
-        # 1. 盤中資訊計算 (VWAP, 主動買盤, 大量成交價, 大戶結構)
         try:
             if not df_i_for_summary.empty:
                 vol_sum = df_i_for_summary["Volume"].sum()
@@ -2295,10 +2205,8 @@ elif page == "🎯 操作策略":
                     s_t = int(t.get("size", t.get("tradeVolume", t.get("volume", 0))) or 0)
                     if p_t == 0 or s_t == 0: continue
                     
-                    # 統計最大成交量價格
                     pv[p_t] = pv.get(p_t, 0) + s_t
                     
-                    # 統計大戶
                     is_buy = p_t >= last_p
                     if s_t >= 50:
                         if is_buy: w_b += s_t
@@ -2309,7 +2217,6 @@ elif page == "🎯 操作策略":
                 whale_net = w_b - w_s
         except Exception: pass
 
-        # 2. 波段資訊計算 (MA5, 10, 20, 20日高低點, MACD, RSI)
         try:
             ma5 = df["Close"].rolling(5).mean().iloc[-1]
             ma10 = df["Close"].rolling(10).mean().iloc[-1]
@@ -2331,7 +2238,6 @@ elif page == "🎯 操作策略":
         except Exception:
             ma5 = ma10 = ma20 = high20 = low20 = osc = rsi14 = float('nan')
 
-        # 3. 外資籌碼計算
         f_sum_5 = 0
         has_foreign = False
         try:
@@ -2341,7 +2247,6 @@ elif page == "🎯 操作策略":
                 has_foreign = True
         except Exception: pass
 
-        # 4. 長線基本面計算 (修正 NoneType 報錯問題)
         eps, roe, rev_growth = float('nan'), float('nan'), float('nan')
         has_fund = False
         try:
@@ -2357,8 +2262,6 @@ elif page == "🎯 操作策略":
                 has_fund = True
         except Exception: pass
 
-        # === 狀態判斷邏輯 ===
-        # 短線狀態
         if curr > vwap_val and buy_pct_val > 0.55 and whale_net > 0 and curr >= max_vol_p:
             short_status, short_color = "短線偏多觀察", "#ff3b3b"
         elif curr < vwap_val and buy_pct_val < 0.45 and whale_net < 0:
@@ -2366,7 +2269,6 @@ elif page == "🎯 操作策略":
         else:
             short_status, short_color = "短線震盪觀望", "#ffcc00"
             
-        # 波段狀態
         if curr > ma20 and ma5 > ma10 and osc > 0 and 50 <= rsi14 <= 75:
             mid_status, mid_color = "波段偏多", "#ff3b3b"
         elif curr < ma20 and ma5 < ma10 and osc < 0:
@@ -2374,7 +2276,6 @@ elif page == "🎯 操作策略":
         else:
             mid_status, mid_color = "波段整理", "#ffcc00"
             
-        # 長線狀態
         long_status, long_color = "長線資料不足", "#aaa"
         if has_fund and not pd.isna(eps) and not pd.isna(roe) and not pd.isna(rev_growth):
             if eps > 0 and roe > 0.1 and rev_growth > 0:
@@ -2384,7 +2285,6 @@ elif page == "🎯 操作策略":
             else:
                 long_status, long_color = "長線中性", "#ffcc00"
 
-        # 操作提醒
         reminder = "盤勢震盪，請嚴格控管資金與部位。"
         if "多" in short_status and "多" in mid_status:
             reminder = "偏多觀察，可等待回測 VWAP 或 MA5 附近是否有支撐。"
@@ -2398,7 +2298,6 @@ elif page == "🎯 操作策略":
         if long_status == "長線資料不足":
             reminder += "<br><span style='color:#aaa; font-size:13px;'>補充：基本面資料不足，長線判斷需保守看待。</span>"
 
-        # 畫面輸出：上方四張卡片
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(f"<div class='card' style='border-top:4px solid {short_color}; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>短線狀態</h4><div style='font-size:24px; font-weight:bold; color:{short_color};'>{short_status}</div></div>", unsafe_allow_html=True)
         c2.markdown(f"<div class='card' style='border-top:4px solid {mid_color}; height:100%;'><h4 style='color:#ccc; margin-bottom:5px;'>波段狀態</h4><div style='font-size:24px; font-weight:bold; color:{mid_color};'>{mid_status}</div></div>", unsafe_allow_html=True)
@@ -2407,7 +2306,6 @@ elif page == "🎯 操作策略":
         
         st.markdown("---")
 
-        # 多空方條件整理
         bull_conds = []
         if curr >= vwap_val: bull_conds.append("現價站上 VWAP")
         if buy_pct_val > 0.55: bull_conds.append("主動買盤大於 55%")
@@ -2430,7 +2328,6 @@ elif page == "🎯 操作策略":
         if not pd.isna(rsi14) and rsi14 > 80: bear_conds.append("RSI 過熱大於 80")
         if curr < max_vol_p: bear_conds.append("現價低於大量成交價")
 
-        # 畫面輸出：中間兩欄條件
         b1_col, b2_col = st.columns(2)
         with b1_col:
             st.markdown("<h4 style='color:#ff3b3b;'>✅ 多方條件</h4>", unsafe_allow_html=True)
@@ -2453,12 +2350,10 @@ elif page == "🎯 操作策略":
 
         st.markdown("---")
 
-        # 分批進場安全價格計算
         active_p = min(curr, vwap_val)
         steady_p = ma5 if not pd.isna(ma5) else vwap_val
         cons_p = ma20 if not pd.isna(ma20) else low20
         
-        # 停損停利計算
         sl_short = min(vwap_val, max_vol_p) * 0.99
         sl_mid = (ma20 * 0.98) if not pd.isna(ma20) else (low20 * 0.98)
         sl_last = low20 * 0.97
@@ -2470,7 +2365,6 @@ elif page == "🎯 操作策略":
         def safe_p(v): 
             return f"{v:.2f}" if not pd.isna(v) else "N/A"
 
-        # 畫面輸出：下方兩欄進場停損參考
         p1_col, p2_col = st.columns(2)
         with p1_col:
             st.markdown("<h4 style='color:#FFD700;'>💰 分批進場安全價格 (分批觀察價)</h4>", unsafe_allow_html=True)
@@ -2512,99 +2406,103 @@ elif page == "🎯 操作策略":
 elif page == "🔐 管理後台":
     st.markdown("## 🔐 使用紀錄後台")
 
-    admin_pwd = st.text_input("請輸入管理密碼", type="password")
-    ADMIN_PASSWORD = read_secret_safe("ADMIN_PASSWORD", "1234")
+    ADMIN_PASSWORD = read_secret_safe("ADMIN_PASSWORD", "")
 
-    if admin_pwd == ADMIN_PASSWORD:
-        try:
-            logs = []
-
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    logs.append(json.loads(line))
-
-            if not logs:
-                st.info("目前沒有使用紀錄")
-            else:
-                log_df = pd.DataFrame(logs)
-
-                symbol_count = log_df["symbol"].value_counts().to_dict()
-                stock_name_count = log_df["stock_name"].value_counts().to_dict()
-
-                log_df["股票代號累積次數"] = log_df["symbol"].map(symbol_count)
-                log_df["股票名稱累積次數"] = log_df["stock_name"].map(stock_name_count)
-
-                display_df = log_df.rename(columns={
-                    "time": "時間",
-                    "visitor_id": "匿名訪客ID",
-                    "page": "頁面",
-                    "symbol": "股票代號",
-                    "stock_name": "股票名稱",
-                    "tf_label": "K線週期"
-                })
-
-                display_df = display_df[
-                    [
-                        "時間",
-                        "匿名訪客ID",
-                        "頁面",
-                        "股票代號",
-                        "股票代號累積次數",
-                        "股票名稱",
-                        "股票名稱累積次數",
-                        "K線週期"
-                    ]
-                ]
-
-                st.markdown("### 📊 使用概況")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("總紀錄數", len(log_df))
-                c2.metric("匿名訪客數", log_df["visitor_id"].nunique())
-                c3.metric("查詢股票數", log_df["symbol"].nunique())
-
-                st.markdown("### 🔥 股票代號查詢排行")
-
-                symbol_rank = (
-                    log_df.groupby(["symbol", "stock_name"])
-                    .size()
-                    .reset_index(name="累積次數")
-                    .sort_values("累積次數", ascending=False)
-                )
-
-                symbol_rank = symbol_rank.rename(columns={
-                    "symbol": "股票代號",
-                    "stock_name": "股票名稱"
-                })
-
-                st.dataframe(symbol_rank, use_container_width=True)
-
-                st.markdown("### 📌 頁面觀看排行")
-
-                page_rank = log_df["page"].value_counts().reset_index()
-                page_rank.columns = ["頁面", "累積次數"]
-
-                st.dataframe(page_rank, use_container_width=True)
-
-                st.markdown("### 🧾 最近使用紀錄")
-
-                st.dataframe(
-                    display_df.sort_values("時間", ascending=False),
-                    use_container_width=True
-                )
-
-        except Exception as e:
-            st.warning(f"目前沒有紀錄，或讀取失敗：{e}")
-
+    if not ADMIN_PASSWORD:
+        st.warning("⚠️ 系統尚未設定管理員密碼 (ADMIN_PASSWORD)，請先至 Streamlit Secrets 進行設定。為保護資安，目前無法登入。")
     else:
-        st.info("請輸入管理密碼")
+        admin_pwd = st.text_input("請輸入管理密碼", type="password")
 
+        if admin_pwd == ADMIN_PASSWORD:
+            try:
+                logs = []
 
+                with open(LOG_FILE, "r", encoding="utf-8") as f:
+                    for line in f:
+                        logs.append(json.loads(line))
+
+                if not logs:
+                    st.info("目前沒有使用紀錄")
+                else:
+                    log_df = pd.DataFrame(logs)
+
+                    symbol_count = log_df["symbol"].value_counts().to_dict()
+                    stock_name_count = log_df["stock_name"].value_counts().to_dict()
+
+                    log_df["股票代號累積次數"] = log_df["symbol"].map(symbol_count)
+                    log_df["股票名稱累積次數"] = log_df["stock_name"].map(stock_name_count)
+
+                    display_df = log_df.rename(columns={
+                        "time": "時間",
+                        "visitor_id": "匿名訪客ID",
+                        "page": "頁面",
+                        "symbol": "股票代號",
+                        "stock_name": "股票名稱",
+                        "tf_label": "K線週期"
+                    })
+
+                    display_df = display_df[
+                        [
+                            "時間",
+                            "匿名訪客ID",
+                            "頁面",
+                            "股票代號",
+                            "股票代號累積次數",
+                            "股票名稱",
+                            "股票名稱累積次數",
+                            "K線週期"
+                        ]
+                    ]
+
+                    st.markdown("### 📊 使用概況")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("總紀錄數", len(log_df))
+                    c2.metric("匿名訪客數", log_df["visitor_id"].nunique())
+                    c3.metric("查詢股票數", log_df["symbol"].nunique())
+
+                    st.markdown("### 🔥 股票代號查詢排行")
+
+                    symbol_rank = (
+                        log_df.groupby(["symbol", "stock_name"])
+                        .size()
+                        .reset_index(name="累積次數")
+                        .sort_values("累積次數", ascending=False)
+                    )
+
+                    symbol_rank = symbol_rank.rename(columns={
+                        "symbol": "股票代號",
+                        "stock_name": "股票名稱"
+                    })
+
+                    st.dataframe(symbol_rank, use_container_width=True)
+
+                    st.markdown("### 📌 頁面觀看排行")
+
+                    page_rank = log_df["page"].value_counts().reset_index()
+                    page_rank.columns = ["頁面", "累積次數"]
+
+                    st.dataframe(page_rank, use_container_width=True)
+
+                    st.markdown("### 🧾 最近使用紀錄")
+
+                    st.dataframe(
+                        display_df.sort_values("時間", ascending=False),
+                        use_container_width=True
+                    )
+
+            except Exception as e:
+                st.warning(f"目前沒有紀錄，或讀取失敗：{e}")
+
+        elif admin_pwd:
+            st.error("密碼錯誤")
+        else:
+            st.info("請輸入管理密碼")
 
 
 # =====================
-# 底部資訊 (全頁共用)
+# 底部資訊 (庫存狀態僅 K線分析顯示)
 # =====================
-if page != "🔐 管理後台":
+if page == "📊 K線分析":
     st.markdown("---")
     b1, b2 = st.columns([4, 6])
 
@@ -2628,7 +2526,11 @@ if page != "🔐 管理後台":
             unsafe_allow_html=True
         )
 
-    if page not in ["🤖 AI綜合預測","📑 基本面分析", "🧩 籌碼分析", "🎯 操作策略"]:
-        with b2:
-            st.markdown("### ⚖️ 即時五檔明細")
-            render_order_book(bids, asks, prev_c, curr)
+    with b2:
+        st.markdown("### ⚖️ 即時五檔明細")
+        render_order_book(bids, asks, prev_c, curr, api_key)
+
+elif page == "⚡ 即時趨勢":
+    st.markdown("---")
+    st.markdown("### ⚖️ 即時五檔明細")
+    render_order_book(bids, asks, prev_c, curr, api_key)
