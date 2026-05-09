@@ -1398,7 +1398,7 @@ elif page == "⚡ 即時趨勢":
         show_date = pd.to_datetime(df_i.index[-1]).strftime("%Y-%m-%d")
         st.caption(f"目前顯示最近交易日盤中走勢：{show_date}，收盤後會保留最後盤中線圖。")
         
-                latest_trade_date = df_i.index[-1].date()
+        latest_trade_date = df_i.index[-1].date()
         now_ts = pd.Timestamp.now(tz="Asia/Taipei").floor("min")
 
         if "High" not in df_i.columns:
