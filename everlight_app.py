@@ -1532,18 +1532,31 @@ elif page == "⚡ 即時趨勢":
                 unsafe_allow_html=True
             )
 
+        df_plot["Volume_lot"] = pd.to_numeric(df_plot["Volume"], errors="coerce").fillna(0) / 1000
+
         cdata = [
             [
-                int(r["Volume"]) if not pd.isna(r["Volume"]) else 0,
+                round(r["Volume_lot"], 0),
                 round(((r["Close"] - prev_c) / prev_c * 100), 2) if prev_c else 0
             ]
             for _, r in df_plot.iterrows()
         ]
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.02)
-        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Close"], mode="lines", name="即價", line=dict(color="yellow", width=2.5), customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>價格:</b> %{y:.2f}<br><b>漲跌:</b> %{customdata[1]:+.2f}%<br><b>量:</b> %{customdata[0]:,.0f}<extra></extra>"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Close"], mode="lines", name="即價", line=dict(color="yellow", width=2.5), customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>價格:</b> %{y:.2f}<br><b>漲跌:</b> %{customdata[1]:+.2f}%<br><b>量:</b> %{customdata[0]:,.0f} 張<extra></extra>"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["VWAP"], mode="lines", name="均價", line=dict(color="white", width=1.5, dash="dot"), hoverinfo="skip"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df_plot.index, y=[prev_c] * len(df_plot), mode="lines", name="昨收", line=dict(color="#777", dash="dash"), hoverinfo="skip"), row=1, col=1)
-        fig.add_trace(go.Bar(x=df_plot.index, y=df_plot["Volume"], name="分量", marker_color=v_colors, customdata=cdata, hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>量:</b> %{y:,.0f}<extra></extra>"), row=2, col=1)
+        fig.add_trace(
+            go.Bar(
+                x=df_plot.index,
+                y=df_plot["Volume_lot"],
+                name="分量(張)",
+                marker_color=v_colors,
+                customdata=cdata,
+                hovertemplate="<b>時間:</b> %{x|%H:%M}<br><b>量:</b> %{y:,.0f} 張<extra></extra>"
+            ),
+            row=2,
+            col=1
+        )
         plot_date = latest_trade_date
         fig.update_xaxes(
             range=[
