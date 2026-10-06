@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+visitor_stock_log.jsonl
