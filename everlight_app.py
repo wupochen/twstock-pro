@@ -788,8 +788,9 @@ def fetch_institutional_chips(symbol, finmind_token):
 
         df["net"] = df["net"].fillna(0)
 
-        if not df.empty and df["net"].abs().max() > 500000:
-            df["net"] = df["net"] / 1000
+        # B02：FinMind 法人 buy/sell 單位是「股」（已用證交所 T86 對帳 3 檔 × 3 日，全部一致）
+        # 一律 ÷1000 換成「張」，保留小數（零股），不再用數值大小猜單位
+        df["net"] = df["net"] / 1000
 
         def classify_name(n):
             n_str = str(n).strip()
@@ -2036,7 +2037,7 @@ elif page == "🧮 規則綜合評分":
     sample_note = f"取樣成交明細 {sample_n} 筆、合計 {sample_lots:,} 張，非全日完整成交" if sample_n else "沒有成交明細"
 
     c_f1, c_f2, c_m1, c_m2 = st.columns(4)
-    c_f1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {f_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>外資買賣超</h4><div style='font-size:24px; font-weight:bold; color:{f_status_color}; margin-bottom:10px;'>{f_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>近5日買賣超：<span style='color:{'#ff3b3b' if f_sum_5>0 else '#00e676' if f_sum_5<0 else '#fff'};'>{f_sum_5:,.0f}</span> 張<br>連買 / 連賣：{f_streak_txt}<br><span style='color:#888; font-size:12px;'>資料日期：{inst_last_date or 'N/A'}（盤後）</span></p></div>", unsafe_allow_html=True)
+    c_f1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {f_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>外資買賣超</h4><div style='font-size:24px; font-weight:bold; color:{f_status_color}; margin-bottom:10px;'>{f_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>近5日買賣超：<span style='color:{'#ff3b3b' if f_sum_5>0 else '#00e676' if f_sum_5<0 else '#fff'};'>{f_sum_5:,.1f}</span> 張<br>連買 / 連賣：{f_streak_txt}<br><span style='color:#888; font-size:12px;'>資料日期：{inst_last_date or 'N/A'}（盤後）</span></p></div>", unsafe_allow_html=True)
     c_f2.markdown(f"<div class='card' style='height:100%; border-left:4px solid #00e5ff;'><h4 style='color:#ccc; margin-bottom:5px;'>近20日外資買超日加權均價（估算）</h4><div style='font-size:28px; font-weight:bold; color:#00e5ff; margin-bottom:5px;'>{f_est_cost} <span style='font-size:16px;'>元</span></div><p style='color:#888; font-size:12px; margin:0;'>只用近20日中外資買超的日子 × 當日收盤價加權，不是外資真實持有成本。</p></div>", unsafe_allow_html=True)
     c_m1.markdown(f"<div class='card' style='height:100%; border-left:4px solid {m_status_color};'><h4 style='color:#ccc; margin-bottom:5px;'>盤中量價狀態</h4><div style='font-size:24px; font-weight:bold; color:{m_status_color}; margin-bottom:10px;'>{m_status}</div><p style='color:#bbb; font-size:14px; margin:0;'>上漲分鐘成交量占比（估算）：<span style='color:{'#ff3b3b' if buy_pct>0.5 else '#00e676'};'>{buy_pct*100:.1f}%</span><br><span style='color:#888; font-size:12px;'>規則：現價 &gt; 1分K估算VWAP 且占比 &gt; 60% 為偏多</span></p></div>", unsafe_allow_html=True)
     c_m2.markdown(f"<div class='card' style='height:100%; border-left:4px solid #ffcc00;'><h4 style='color:#ccc; margin-bottom:5px;'>盤中成交價位（估算）</h4><p style='color:#bbb; font-size:15px; margin:5px 0;'>1分K估算 VWAP：<span style='font-weight:bold; color:#fff;'>{m_vwap}</span> 元<br>取樣成交明細最大量價位：<span style='font-weight:bold; color:#fff;'>{m_max_vol_p}</span> 元<br>集中時間：約 <span style='color:#ddd;'>{m_max_vol_times}</span><br><span style='color:#888; font-size:12px;'>{sample_note}</span></p></div>", unsafe_allow_html=True)
@@ -2345,7 +2346,7 @@ elif page == "📑 基本面分析":
 # =====================
 elif page == "🧩 籌碼分析":
     st.markdown(f"## 🧩 {display_name} 籌碼分析")
-    st.markdown(badge("來源：FinMind・第三方・盤後資料", "eod") + badge("張數換算待與證交所官方數字對帳（B02）", "missing"), unsafe_allow_html=True)
+    st.markdown(badge("來源：FinMind・第三方・盤後資料", "eod") + badge("單位：張（FinMind 股數 ÷ 1000，已與證交所對帳）", "eod"), unsafe_allow_html=True)
 
     def fmt_chip_num(v, plus=False, bold=False):
         try:
@@ -2353,7 +2354,7 @@ elif page == "🧩 籌碼分析":
             color = "#ff3b3b" if v > 0 else "#00e676" if v < 0 else "#fff"
             fw = "font-weight:bold;" if bold else ""
             sign = "+" if plus and v > 0 else ""
-            text = f"{sign}{v:.0f} 張"
+            text = f"{sign}{v:,.0f} 張" if float(v).is_integer() else f"{sign}{v:,.1f} 張"
             return f"<span style='color:{color}; {fw}'>{text}</span>"
         except Exception:
             return "<span style='color:#888;'>0 張</span>"
