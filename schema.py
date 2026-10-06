@@ -56,6 +56,7 @@ class Actionability(str, Enum):
     OK = "可操作"
     WAIT_PULLBACK = "等待回測"
     NO_CHASE = "不宜追價"
+    NO_NEW_ENTRY = "不宜新進場"   # 當沖 13:00 後：剩餘交易時間太短（不是價格太高）
     NOT_TRADABLE = "無法正常交易"
     NO_DAYTRADE = "不可當沖"
     MARKET_CLOSED = "市場已收盤"
