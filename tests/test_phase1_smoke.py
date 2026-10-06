@@ -207,3 +207,27 @@ def test_revenue_month_uses_revenue_month_field():
     # 合成資料最後一筆：revenue_year/month = 2026/09，date = 2026-10-01
     assert "<td>2026/09</td>" in t
     assert "<td>2026/10</td>" not in t
+
+
+def test_b02_institutional_units_small_stock():
+    """B02 回歸測試：FinMind 單位是「股」，量小的股票也要 ÷1000（12,944 股 → 12.944 張，不得顯示成 12,944 張）"""
+    def get_small(url, *a, **kw):
+        ds = (kw.get("params") or {}).get("dataset", "")
+        if "finmindtrade" in url and ds == "TaiwanStockInstitutionalInvestorsBuySell":
+            d = pd.Timestamp.now().strftime("%Y-%m-%d")
+            return FakeResp({"data": [{"date": d, "name": "Foreign_Investor", "buy": 112944, "sell": 100000}]})
+        return fake_get(url, *a, **kw)
+    import streamlit as st
+    st.cache_data.clear()  # 避免沿用前一個測試快取的法人資料
+    with mock.patch("yfinance.download", side_effect=fake_download), \
+         mock.patch("yfinance.Ticker", FakeTicker), \
+         mock.patch("requests.get", side_effect=get_small):
+        at = AppTest.from_file(APP, default_timeout=60)
+        at.secrets["FINMIND_TOKEN"] = "test"
+        at.secrets["FUGLE_TOKEN"] = "test"
+        at.run()
+        at.radio[0].set_value("🧩 籌碼分析").run()
+        assert not at.exception
+        t = all_text(at)
+        assert "12.9 張" in t
+        assert "12,944 張" not in t
