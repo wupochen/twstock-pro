@@ -178,3 +178,16 @@ def test_otc_and_etf_quotes_same_adapter():
         assert sec.availability == db.Availability.AVAILABLE
         assert abs(sec.items["vwap"].value - sec.items["avg_price"].value) <= 0.01
         assert sec.items["is_limit_up_price"].value is None          # null 保持 None
+
+
+def test_close_auction_bar():
+    """收盤：13:25～13:29 沒有 K 棒，13:30 一根是收盤集合競價（單一價），10 分鐘後重抓沒有任何修正。"""
+    obs = raw("fugle_candles_close_study_20261007.json")["obs"]
+    for o in obs:
+        times = [b[0] for b in o["bars"]]
+        assert times[-2:] == ["13:24", "13:30"]
+        o_, h, l, c = o["bars"][-1][1:5]
+        assert o_ == h == l == c
+    first = {o["s"]: o["bars"] for o in obs[:2]}
+    later = {o["s"]: o["bars"] for o in obs[2:]}
+    assert first == later
