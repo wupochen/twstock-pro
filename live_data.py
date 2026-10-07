@@ -39,8 +39,14 @@ K_INFO = "yf_info"
 FUGLE_BASE = "https://api.fugle.tw/marketdata/v1.0/stock/intraday"
 FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
 
-# 新鮮度門檻（秒）：只用來標「最新／過期」，不是交易規則
-FRESHNESS_MAX_AGE = {QUOTE: 60, ORDER_BOOK: 60, "1分K": 180, "5分K": 420}
+# 新鮮度門檻（秒）：UI operational threshold，只用來標「最新／過期」，不是市場規則；之後可由後台調整
+QUOTE_STALE_SECONDS = 60
+ORDER_BOOK_STALE_SECONDS = 60
+CANDLE_1M_STALE_SECONDS = 180      # 1 分 K 有 120 秒 settle，再加傳輸餘裕
+CANDLE_5M_STALE_SECONDS = 420
+FRESHNESS_MAX_AGE = {QUOTE: QUOTE_STALE_SECONDS, ORDER_BOOK: ORDER_BOOK_STALE_SECONDS,
+                     "1分K": CANDLE_1M_STALE_SECONDS, "5分K": CANDLE_5M_STALE_SECONDS}
+CLOSED_FRESHNESS_TEXT = "市場已收盤，不以盤中門檻判斷新鮮度"
 FUGLE_BUDGET_PER_MINUTE = 50          # 免費方案 60/分，留 10 次餘裕給其他頁面
 
 
@@ -281,8 +287,11 @@ def build_view_model(symbol: str, results: Dict[str, Optional[FetchResult]], now
             settled_n = sum(1 for row in s.rows if row["state"] == SETTLED)
             prov_n = len(s.rows) - settled_n
             note = f"已穩定 {settled_n} 根、暫定 {prov_n} 根（暫定的可能被資料源修正）"
+        fresh = s.freshness.value
+        if s.name in FRESHNESS_MAX_AGE and session != MarketSession.OPEN:
+            fresh = CLOSED_FRESHNESS_TEXT
         view.status.append(FetchLine(s.name, s.source_name, s.as_of, s.availability.value,
-                                     s.freshness.value, _status_text(r), note))
+                                     fresh, _status_text(r), note))
     for e in bundle.errors:
         view.status.append(FetchLine(e.section, e.source_name, None, Availability.UNAVAILABLE.value,
                                      Freshness.UNKNOWN.value, "抓取失敗", e.message))
