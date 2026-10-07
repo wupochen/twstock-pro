@@ -174,3 +174,15 @@ def test_fetchers_build_fugle_request():
     f[ld.K_CANDLES]("2330", timeframe="5")
     assert seen["url"].endswith("/intraday/candles/2330") and seen["params"] == {"timeframe": "5"}
     assert seen["headers"] == {"X-API-KEY": "K"}
+
+
+def test_after_close_freshness_wording():
+    v, *_ = run(t=at("14:30:00"))
+    line = next(l for l in v.status if l.section == QUOTE)
+    assert line.freshness == ld.CLOSED_FRESHNESS_TEXT
+    assert next(l for l in v.status if l.section == INSTITUTIONAL).freshness != ld.CLOSED_FRESHNESS_TEXT
+
+
+def test_freshness_thresholds_are_named_settings():
+    assert ld.FRESHNESS_MAX_AGE[QUOTE] == ld.QUOTE_STALE_SECONDS == 60
+    assert ld.FRESHNESS_MAX_AGE["1分K"] == ld.CANDLE_1M_STALE_SECONDS > 120
