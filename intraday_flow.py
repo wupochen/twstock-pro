@@ -12,9 +12,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from enum import Enum
+from typing import Optional, Tuple
 
 from data_bundle import Section
+
+
+class FlowQuality(str, Enum):
+    NORMAL = "正常"
+    LOW_COVERAGE = "可歸類成交偏少"
+    INCONSISTENT = "資料不一致"
+    UNAVAILABLE = "資料不足"
+
+
+# 可歸類比例低於這個值就標「偏少」；是顯示用門檻（可調），不是市場規則
+LOW_COVERAGE_THRESHOLD = 0.5
+
+RATIO_TOOLTIP = "外盤比只計算能分辨是內盤或外盤的成交量，其餘成交沒有算進比例。"
 
 
 @dataclass
@@ -27,19 +41,31 @@ class AskBidBreakdown:
     ask_ratio: Optional[float]         # 外盤 ÷ (外盤 + 內盤)
     consistent: bool                   # 外盤 + 內盤 ≤ 總量（資料自洽）
     note: str = ""
+    quality: FlowQuality = FlowQuality.UNAVAILABLE
+
+    def display_pair(self) -> Tuple[str, str]:
+        """外盤比永遠和可歸類比例一起顯示（不能只給外盤比）。"""
+        pct = lambda v: "—" if v is None else f"{v * 100:.1f}%"  # noqa: E731
+        return f"外盤比：{pct(self.ask_ratio)}", f"可歸類成交：{pct(self.classified_share)}"
 
 
-def ask_bid_breakdown(quote: Section) -> AskBidBreakdown:
+def ask_bid_breakdown(quote: Section, low_coverage: float = LOW_COVERAGE_THRESHOLD) -> AskBidBreakdown:
     g = lambda k: quote.items[k].value if k in quote.items else None  # noqa: E731
     total, a, b = g("trade_volume"), g("volume_at_ask"), g("volume_at_bid")
     if None in (total, a, b):
         return AskBidBreakdown(total, a, b, None, None, None, False, "內外盤資料不完整")
     classified = a + b
-    ratio = a / classified if classified > 0 else None
+    ratio = a / classified if classified > 0 else None        # 0 張可歸類 → 沒有比例，不是 0%
     share = classified / total if total > 0 else None
     ok = classified <= total + 1e-9
-    note = "" if ok else "外盤＋內盤大於總量，資料可能有誤"
-    return AskBidBreakdown(total, a, b, total - classified, share, ratio, ok, note)
+    if not ok:      # 不自動縮放、不修正，只標示
+        return AskBidBreakdown(total, a, b, total - classified, share, ratio, False,
+                               "外盤＋內盤大於總量，資料可能有誤", FlowQuality.INCONSISTENT)
+    if ratio is None or share is None:
+        return AskBidBreakdown(total, a, b, total - classified, share, None, True,
+                               "還沒有可歸類的成交", FlowQuality.UNAVAILABLE)
+    q = FlowQuality.LOW_COVERAGE if share < low_coverage else FlowQuality.NORMAL
+    return AskBidBreakdown(total, a, b, total - classified, share, ratio, True, "", q)
 
 
 def vwap_matches_avg_price(quote: Section, tolerance: float = 0.01) -> Optional[bool]:
