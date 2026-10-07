@@ -114,7 +114,9 @@ class Source:
     fetch: Callable[..., Any]                          # fetch(symbol, **params) -> 原始資料
     provider: str = "default"                          # 限流與統計依提供者分開（例：Fugle、FinMind）
     ttl_seconds: float = 5.0
-    as_of: Optional[Callable[[Any], Optional[datetime]]] = None   # 從原始資料取出資料時間
+    # 從原始資料取出「資料時間」。原始資料若有多個時間（報價時間、交易日、K 棒時間），
+    # 由每種資料自己明確指定用哪一個，不由通用 helper 猜。
+    as_of: Optional[Callable[[Any], Optional[datetime]]] = None
 
 
 @dataclass
@@ -122,16 +124,19 @@ class Stats:
     api_calls: Dict[str, int] = field(default_factory=dict)
     cache_hits: Dict[str, int] = field(default_factory=dict)
     errors: Dict[str, int] = field(default_factory=dict)
-    rate_limited: Dict[str, int] = field(default_factory=dict)
+    rate_limited: Dict[str, int] = field(default_factory=dict)     # 被自己設定的上限擋下
+    backoff_skipped: Dict[str, int] = field(default_factory=dict)  # 失敗退避期間沒重打
 
     @staticmethod
     def _inc(d: Dict[str, int], kind: str) -> None:
         d[kind] = d.get(kind, 0) + 1
 
     def summary(self) -> List[str]:
-        kinds = sorted(set(self.api_calls) | set(self.cache_hits) | set(self.errors) | set(self.rate_limited))
+        kinds = sorted(set(self.api_calls) | set(self.cache_hits) | set(self.errors) | set(self.rate_limited)
+                       | set(self.backoff_skipped))
         return [f"{k}：打 API {self.api_calls.get(k, 0)} 次、用快取 {self.cache_hits.get(k, 0)} 次、"
-                f"失敗 {self.errors.get(k, 0)} 次、因上限略過 {self.rate_limited.get(k, 0)} 次" for k in kinds]
+                f"失敗 {self.errors.get(k, 0)} 次、因上限略過 {self.rate_limited.get(k, 0)} 次、"
+                f"失敗退避略過 {self.backoff_skipped.get(k, 0)} 次" for k in kinds]
 
 
 class MarketDataCoordinator:
@@ -222,7 +227,7 @@ class MarketDataCoordinator:
             if (not force and e and e.last_error_at is not None
                     and (now - e.last_error_at).total_seconds() < self._backoff
                     and (e.last_success_at is None or e.last_error_at > e.last_success_at)):
-                Stats._inc(self.stats.cache_hits, kind)
+                Stats._inc(self.stats.backoff_skipped, kind)
                 return self._result(key, FetchStatus.STALE_AFTER_ERROR, e)
             if not self._take_budget(src.provider):
                 Stats._inc(self.stats.rate_limited, kind)
