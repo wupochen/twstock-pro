@@ -198,5 +198,16 @@
     "http_status": 200,
     "complete": true,
     "note": "每次只保留最後 15 根的開高低收量（不含 average），用來量 K 棒修正時間"
+  },
+  "fugle_candles_close_study_20261007.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 13:32、13:42 台北，測試站管理後台診斷 G",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/{2330|1711}",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": "只保留最後 8 根"
   }
 }
