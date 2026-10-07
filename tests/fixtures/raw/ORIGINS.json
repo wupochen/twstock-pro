@@ -22,58 +22,170 @@
   },
   "fugle_candles_1438_1m_lowliq_20261007_112221.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:22:21 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:22:21 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/1438",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_1711_1m_20261007_112020.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:20 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:20 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/1711",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_1711_5m_20261007_112026.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/1711",
+    "params": {
+      "timeframe": "5"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2330_1m_20261007_112005.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:05 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:05 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2330",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2330_1m_20261007_112650.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:26:50 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:26:50 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2330",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2330_5m_20261007_112011.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:11 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:11 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2330",
+    "params": {
+      "timeframe": "5"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2330_5m_20261007_112656.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:26:56 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:26:56 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2330",
+    "params": {
+      "timeframe": "5"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2701_1m_lowliq_20261007_112216.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:22:16 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:22:16 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2701",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_2701_5m_lowliq_20261007_112243.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:22:43 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:22:43 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/2701",
+    "params": {
+      "timeframe": "5"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_candles_9944_1m_lowliq_20261007_112226.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:22:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:22:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/candles/9944",
+    "params": {
+      "timeframe": "1"
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_quote_IX0001_20261007_112047.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:47 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:47 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/IX0001",
+    "params": {},
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_quote_IX0043_20261007_112052.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:20:52 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:20:52 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/IX0043",
+    "params": {},
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   },
   "fugle_snapshot_actives_TSE_403_20261007_112102.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:21:02 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:21:02 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/snapshot/actives/TSE",
+    "params": {
+      "trade": "volume"
+    },
+    "http_status": 403,
+    "complete": false,
+    "note": "方案權限不足；snapshot/movers（漲幅、跌幅）與 snapshot/quotes 同為 403"
   },
   "fugle_trades_2330_limit50_20261007_112127.json": {
     "origin": "RAW_CAPTURE",
-    "captured": "2026-10-07 11:21:27 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+    "captured": "2026-10-07 11:21:27 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/trades/2330",
+    "params": {
+      "limit": 50
+    },
+    "http_status": 200,
+    "complete": true,
+    "note": ""
+  },
+  "fugle_quote_6488_otc_20261007_113941.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:39:41 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/6488",
+    "params": {},
+    "http_status": 200,
+    "complete": true,
+    "note": ""
+  },
+  "fugle_quote_0050_etf_20261007_113946.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:39:46 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）",
+    "endpoint": "https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/0050",
+    "params": {},
+    "http_status": 200,
+    "complete": true,
+    "note": ""
   }
 }

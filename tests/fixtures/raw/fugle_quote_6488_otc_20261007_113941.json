@@ -1,0 +1,95 @@
+{
+ "date": "2026-10-07",
+ "type": "EQUITY",
+ "exchange": "TPEx",
+ "market": "OTC",
+ "symbol": "6488",
+ "name": "環球晶",
+ "referencePrice": 1205,
+ "previousClose": 1205,
+ "openPrice": 1185,
+ "openTime": 1791334803828975,
+ "highPrice": 1240,
+ "highTime": 1791335890053873,
+ "lowPrice": 1180,
+ "lowTime": 1791334883727583,
+ "closePrice": 1205,
+ "closeTime": 1791344377487793,
+ "avgPrice": 1207.75,
+ "change": 0,
+ "changePercent": 0,
+ "amplitude": 4.98,
+ "lastPrice": 1205,
+ "lastSize": 1,
+ "bids": [
+  {
+   "price": 1200,
+   "size": 107
+  },
+  {
+   "price": 1195,
+   "size": 131
+  },
+  {
+   "price": 1190,
+   "size": 135
+  },
+  {
+   "price": 1185,
+   "size": 130
+  },
+  {
+   "price": 1180,
+   "size": 229
+  }
+ ],
+ "asks": [
+  {
+   "price": 1205,
+   "size": 36
+  },
+  {
+   "price": 1210,
+   "size": 52
+  },
+  {
+   "price": 1215,
+   "size": 142
+  },
+  {
+   "price": 1220,
+   "size": 264
+  },
+  {
+   "price": 1225,
+   "size": 174
+  }
+ ],
+ "total": {
+  "tradeValue": 10269490000,
+  "tradeVolume": 8503,
+  "tradeVolumeAtBid": 3905,
+  "tradeVolumeAtAsk": 4477,
+  "transaction": 3224,
+  "time": 1791344377487793
+ },
+ "lastTrade": {
+  "bid": 1200,
+  "ask": 1205,
+  "price": 1205,
+  "size": 1,
+  "time": 1791344377487793,
+  "serial": 3405545
+ },
+ "lastTrial": {
+  "bid": 1190,
+  "ask": 1195,
+  "price": 1190,
+  "size": 104,
+  "time": 1791334799617063,
+  "serial": 54926
+ },
+ "isContinuous": true,
+ "serial": 3405639,
+ "lastUpdated": 1791344378125994
+}

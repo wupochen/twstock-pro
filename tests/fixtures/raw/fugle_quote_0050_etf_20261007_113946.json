@@ -1,0 +1,95 @@
+{
+ "date": "2026-10-07",
+ "type": "EQUITY",
+ "exchange": "TWSE",
+ "market": "TSE",
+ "symbol": "0050",
+ "name": "元大台灣50",
+ "referencePrice": 116.5,
+ "previousClose": 116.5,
+ "openPrice": 116.15,
+ "openTime": 1791334922219867,
+ "highPrice": 116.55,
+ "highTime": 1791335946348968,
+ "lowPrice": 115.95,
+ "lowTime": 1791339877782837,
+ "closePrice": 116.25,
+ "closeTime": 1791344384553038,
+ "avgPrice": 116.28,
+ "change": -0.25,
+ "changePercent": -0.21,
+ "amplitude": 0.52,
+ "lastPrice": 116.25,
+ "lastSize": 10,
+ "bids": [
+  {
+   "price": 116.2,
+   "size": 331
+  },
+  {
+   "price": 116.15,
+   "size": 862
+  },
+  {
+   "price": 116.1,
+   "size": 1220
+  },
+  {
+   "price": 116.05,
+   "size": 1054
+  },
+  {
+   "price": 116,
+   "size": 2438
+  }
+ ],
+ "asks": [
+  {
+   "price": 116.25,
+   "size": 384
+  },
+  {
+   "price": 116.3,
+   "size": 498
+  },
+  {
+   "price": 116.35,
+   "size": 951
+  },
+  {
+   "price": 116.4,
+   "size": 1159
+  },
+  {
+   "price": 116.45,
+   "size": 1078
+  }
+ ],
+ "total": {
+  "tradeValue": 4571612250,
+  "tradeVolume": 39316,
+  "tradeVolumeAtBid": 19794,
+  "tradeVolumeAtAsk": 18057,
+  "transaction": 6374,
+  "time": 1791344384553038
+ },
+ "lastTrade": {
+  "bid": 116.2,
+  "ask": 116.25,
+  "price": 116.25,
+  "size": 10,
+  "time": 1791344384553038,
+  "serial": 10337570
+ },
+ "lastTrial": {
+  "bid": 116.15,
+  "ask": 116.2,
+  "price": 116.15,
+  "size": 1460,
+  "time": 1791334920414544,
+  "serial": 444006
+ },
+ "isContinuous": true,
+ "serial": 10338359,
+ "lastUpdated": 1791344386262347
+}
