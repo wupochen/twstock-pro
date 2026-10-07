@@ -1,0 +1,9 @@
+{"_note":"FinMind TaiwanStockInstitutionalInvestorsBuySell 欄位格式；外資淨額取自 2026-10 第一段 UAT 與 T86 對帳的真實值（股），其餘列為測試用",
+ "data":[
+  {"date":"2026-10-01","stock_id":"1416","buy":20000,"sell":7056,"name":"Foreign_Investor"},
+  {"date":"2026-10-01","stock_id":"1416","buy":0,"sell":0,"name":"Investment_Trust"},
+  {"date":"2026-10-01","stock_id":"1416","buy":1000,"sell":0,"name":"Dealer_self"},
+  {"date":"2026-10-02","stock_id":"1416","buy":10000,"sell":52184,"name":"Foreign_Investor"},
+  {"date":"2026-10-02","stock_id":"1416","buy":null,"sell":null,"name":"Investment_Trust"},
+  {"date":"2026-10-05","stock_id":"1416","buy":3715,"sell":120000,"name":"Foreign_Investor"}
+ ]}

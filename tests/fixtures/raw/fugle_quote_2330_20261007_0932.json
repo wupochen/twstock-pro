@@ -1,0 +1,11 @@
+{"date":"2026-10-07","type":"EQUITY","exchange":"TWSE","market":"TSE","symbol":"2330","name":"台積電",
+ "referencePrice":2585,"previousClose":2585,"openPrice":2565,"openTime":1791334809398636,
+ "highPrice":2580,"highTime":1791334997487399,"lowPrice":2560,"lowTime":1791334811049599,
+ "closePrice":2580,"closeTime":1791336726161047,"avgPrice":2568.99,"change":-5,"changePercent":-0.19,
+ "amplitude":0.77,"lastPrice":2580,"lastSize":1,
+ "bids":[{"price":2575,"size":446},{"price":2570,"size":492},{"price":2565,"size":693},{"price":2560,"size":1387},{"price":2555,"size":465}],
+ "asks":[{"price":2580,"size":273},{"price":2585,"size":468},{"price":2590,"size":409},{"price":2595,"size":668},{"price":2600,"size":1097}],
+ "total":{"tradeValue":12598330000,"tradeVolume":4904,"tradeVolumeAtBid":948,"tradeVolumeAtAsk":1383,"transaction":792,"time":1791336726161047},
+ "lastTrade":{"bid":2575,"ask":2580,"price":2580,"size":1,"time":1791336726161047,"serial":3774349},
+ "lastTrial":{"bid":2560,"ask":2565,"price":2565,"size":2570,"time":1791334799970557,"serial":102527},
+ "isContinuous":true,"serial":3774349,"lastUpdated":1791336726161047}

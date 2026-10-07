@@ -1,0 +1,7 @@
+{"_note":"依 2026-10-06 第一段 UAT 診斷 B 記錄的欄位重建（收盤後、漲停鎖單）；未記錄的欄位刻意不放",
+ "date":"2026-10-06","symbol":"1711","name":"永光","referencePrice":44.2,"previousClose":44.2,"lastPrice":48.6,
+ "isLimitUpPrice":true,"isLimitUpBid":true,"isLimitDownPrice":null,"isLimitDownAsk":null,
+ "bids":[{"price":48.6,"size":14513},{"price":48.55,"size":130},{"price":48.5,"size":214},{"price":48.45,"size":146},{"price":48.4,"size":123}],
+ "asks":[],
+ "total":{"tradeVolume":32443,"tradeVolumeAtBid":7163,"tradeVolumeAtAsk":25060,"transaction":7199,"time":1791264600000000},
+ "lastUpdated":1791264600000000}

@@ -1,0 +1,7 @@
+{"_note":"FinMind TaiwanStockMonthRevenue 欄位格式；date 與 revenue_year/month 的對應取自第一段診斷 F 實測（date 是公布月份的 1 號），2026/08 營收 7.47 億為實測值，其他月份數值為測試用",
+ "data":[
+  {"date":"2026-07-01","stock_id":"1711","country":"Taiwan","revenue":701000000,"revenue_month":6,"revenue_year":2026,"create_time":"2026-07-08 08:00:00"},
+  {"date":"2026-08-01","stock_id":"1711","country":"Taiwan","revenue":688000000,"revenue_month":7,"revenue_year":2026,"create_time":"2026-08-07 08:00:00"},
+  {"date":"2026-09-01","stock_id":"1711","country":"Taiwan","revenue":747000000,"revenue_month":8,"revenue_year":2026,"create_time":"2026-09-08 08:00:00"},
+  {"date":"2026-10-01","stock_id":"1711","country":"Taiwan","revenue":null,"create_time":null}
+ ]}
