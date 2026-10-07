@@ -9,8 +9,10 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 
 class DistributionStatus(str, Enum):
@@ -32,6 +34,7 @@ SOURCE_DISTRIBUTION: Dict[str, DistributionStatus] = {
     "FinMind": DistributionStatus.LICENSE_UNCONFIRMED,
     "TWSE": DistributionStatus.LICENSE_UNCONFIRMED,
     "TPEx": DistributionStatus.LICENSE_UNCONFIRMED,
+    "Shioaji": DistributionStatus.LICENSE_UNCONFIRMED,
 }
 
 LICENSE_NOTES: Dict[str, str] = {
@@ -40,6 +43,7 @@ LICENSE_NOTES: Dict[str, str] = {
     "FinMind": "授權條款未查",
     "TWSE": "官方資料不等於可再散布；需逐資料集確認",
     "TPEx": "官方資料不等於可再散布；需逐資料集確認",
+    "Shioaji": "券商下單用 API；交易所「不得傳送予第三人」規範同樣適用；未接入",
 }
 
 
@@ -59,3 +63,44 @@ def can_display(source_name: str, viewer: ViewerScope) -> bool:
 
 def blocked_message(source_name: str) -> str:
     return f"這項資料（{source_name}）目前尚未取得對外顯示授權，只有網站擁有者可以看到。"
+
+
+# ── 顯示守門（以資料區塊為最小封鎖單位）──────────────────────────
+@dataclass
+class BlockRecord:
+    """被擋下的紀錄（給後台查「為什麼某頁沒有行情」）。"""
+    section: str
+    blocked_source: str
+    distribution_status: str
+    viewer_scope: str
+    feature: str
+    timestamp: datetime
+    reason: str
+
+
+class BlockAudit:
+    def __init__(self, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc), limit: int = 500):
+        self._now, self._limit = now, limit
+        self.records: List[BlockRecord] = []
+
+    def add(self, section: str, source: str, viewer: ViewerScope, feature: str) -> BlockRecord:
+        r = BlockRecord(section, source, status_of(source).value, viewer.value, feature, self._now(),
+                        blocked_message(source))
+        self.records.append(r)
+        del self.records[:-self._limit]
+        return r
+
+
+def filter_displayable_sections(sections: Iterable[Any], viewer: ViewerScope, feature: str = "",
+                                audit: Optional[BlockAudit] = None) -> Tuple[List[Any], List[Tuple[Any, str]]]:
+    """每個資料區塊（需有 name、source_name）各自判斷：可顯示的放第一個清單，
+    被擋的放第二個清單並附白話原因。不會因為一個區塊未授權就把整頁合法資料都封掉。"""
+    shown, blocked = [], []
+    for sec in sections:
+        if can_display(sec.source_name, viewer):
+            shown.append(sec)
+        else:
+            blocked.append((sec, blocked_message(sec.source_name)))
+            if audit is not None:
+                audit.add(getattr(sec, "name", "?"), sec.source_name, viewer, feature)
+    return shown, blocked
