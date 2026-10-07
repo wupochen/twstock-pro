@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
+import indicators as ind  # 第二段 Gate 2.3：技術指標統一由 indicators.py 計算（公式原樣搬移）
 import os
 import uuid
 import json
@@ -1371,40 +1372,8 @@ if page == "📊 K線分析":
 
     df_calc = df.copy()
 
-    df_calc['MA5'] = df_calc['Close'].rolling(5).mean()
-    df_calc['MA10'] = df_calc['Close'].rolling(10).mean()
-    df_calc['MA20'] = df_calc['Close'].rolling(20).mean()
-
-    df_calc['9H'] = pd.to_numeric(df_calc['High'], errors="coerce").rolling(9).max()
-    df_calc['9L'] = pd.to_numeric(df_calc['Low'], errors="coerce").rolling(9).min()
-
-    rsv_den = (df_calc['9H'] - df_calc['9L']).replace(0, float("nan"))
-
-    df_calc['RSV'] = (
-        (pd.to_numeric(df_calc['Close'], errors="coerce") - df_calc['9L']) 
-        / rsv_den 
-        * 100
-    )
-
-    df_calc['RSV'] = pd.to_numeric(df_calc['RSV'], errors="coerce")
-    df_calc['K'] = df_calc['RSV'].ewm(com=2, adjust=False).mean()
-    df_calc['D'] = df_calc['K'].ewm(com=2, adjust=False).mean()
-
-    df_calc['EMA12'] = df_calc['Close'].ewm(span=12, adjust=False).mean()
-    df_calc['EMA26'] = df_calc['Close'].ewm(span=26, adjust=False).mean()
-    df_calc['DIF'] = df_calc['EMA12'] - df_calc['EMA26']
-    df_calc['MACD'] = df_calc['DIF'].ewm(span=9, adjust=False).mean()
-    df_calc['OSC'] = df_calc['DIF'] - df_calc['MACD']
-
-    delta = df_calc['Close'].diff()
-    gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    rs = gain / loss
-    df_calc['RSI'] = 100 - (100 / (1 + rs))
-
-    df_calc['STD20'] = df_calc['Close'].rolling(20).std()
-    df_calc['BB_UP'] = df_calc['MA20'] + 2 * df_calc['STD20']
-    df_calc['BB_DN'] = df_calc['MA20'] - 2 * df_calc['STD20']
+    # Gate 2.3：MA／KD／MACD／RSI／布林全部改由 indicators.py 計算（欄位名稱與公式不變）
+    df_calc = ind.compute_kline_indicators(df_calc)
 
     if k_range.startswith("還原"):
         df_k = df_calc.copy()
@@ -1653,8 +1622,7 @@ elif page == "⚡ 即時趨勢":
             df_plot = df_i.copy()
 
         df_plot = df_plot[~df_plot.index.duplicated(keep="last")]
-        df_plot["VWAP"] = (df_plot["Close"] * df_plot["Volume"]).cumsum() / df_plot["Volume"].cumsum().replace(0, pd.NA)
-        df_plot["VWAP"] = df_plot["VWAP"].bfill().fillna(df_plot["Close"])
+        df_plot["VWAP"] = ind.vwap_series(df_plot["Close"], df_plot["Volume"])
 
         high_val, low_val = max(df_plot["High"].max(), curr), min(df_plot["Low"].min(), curr)
         amp_pct = ((high_val - low_val) / low_val) * 100 if low_val > 0 else 0
@@ -1672,7 +1640,7 @@ elif page == "⚡ 即時趨勢":
         buy_pct = (buy_vol / (buy_vol + sell_vol) * 100) if (buy_vol + sell_vol) else 50
         sell_pct = 100 - buy_pct
 
-        df_plot["VMA"] = df_plot["Volume"].rolling(10).mean().shift(1)
+        df_plot["VMA"] = ind.sma(df_plot["Volume"], 10).shift(1)
 
         surges = []
         buy_surge_streak = 0
@@ -1825,7 +1793,7 @@ elif page == "🧮 規則綜合評分":
     note_t, note_i, note_c, note_f = "", "", "", ""
     try:
         if len(df) >= 20:
-            ma5, ma20, h20, vma20, vc = df["Close"].rolling(5).mean().iloc[-1], df["Close"].rolling(20).mean().iloc[-1], df["High"].rolling(20).max().iloc[-1], df["Volume"].rolling(20).mean().iloc[-1], df["Volume"].iloc[-1]
+            ma5, ma20, h20, vma20, vc = ind.sma(df["Close"], 5).iloc[-1], ind.sma(df["Close"], 20).iloc[-1], df["High"].rolling(20).max().iloc[-1], ind.sma(df["Volume"], 20).iloc[-1], df["Volume"].iloc[-1]
             if curr > ma5: ts += 10; why_t.append(f"現價 {curr:.2f} > MA5 {ma5:.2f}（+10）")
             if curr > ma20: ts += 20; why_t.append(f"現價 > MA20 {ma20:.2f}（+20）")
             if curr >= h20 * 0.99: ts += 25; why_t.append(f"現價接近或高於20日高點 {h20:.2f}（+25）")
@@ -1841,7 +1809,7 @@ elif page == "🧮 規則綜合評分":
     try:
         if not df_i_for_summary.empty:
             df_i = df_i_for_summary.copy()
-            vwap = (df_i["Close"] * df_i["Volume"]).sum() / df_i["Volume"].sum() if df_i["Volume"].sum() > 0 else curr
+            vwap = ind.vwap_total(df_i["Close"], df_i["Volume"], curr)
             hd, ld = max(df_i["High"].max(), curr), min(df_i["Low"].min(), curr)
             amp = (hd - ld) / ld if ld > 0 else 0
             bv, pc = 0, prev_c
@@ -1855,7 +1823,7 @@ elif page == "🧮 規則綜合評分":
                 sell_pct = 1 - buy_pct
             if curr > vwap: ids += 20; why_i.append(f"現價 > 1分K估算VWAP {vwap:.2f}（+20）")
             if buy_pct > 0.6: ids += 25; why_i.append(f"上漲分鐘成交量占比（估算）{buy_pct*100:.1f}% > 60%（+25）")
-            if len(df) >= 20 and df_i["Volume"].max() > df["Volume"].rolling(20).mean().iloc[-1] / 270 * 2: ids += 20; why_i.append("盤中有分鐘量 > 日均量÷270×2（+20）")
+            if len(df) >= 20 and df_i["Volume"].max() > ind.sma(df["Volume"], 20).iloc[-1] / 270 * 2: ids += 20; why_i.append("盤中有分鐘量 > 日均量÷270×2（+20）")
             if hd > 0 and (hd - curr) / hd < 0.01: ids += 15; why_i.append(f"距今日高點 {hd:.2f} 不到1%（+15）")
             if amp > 0.03: ids += 10; why_i.append(f"今日振幅 {amp*100:.1f}% > 3%（+10）")
             note_i = "此面向原規則滿分只有90分（第二段處理）"
@@ -1991,7 +1959,7 @@ elif page == "🧮 規則綜合評分":
     if not df_i_for_summary.empty:
         vol_sum = df_i_for_summary["Volume"].sum()
         if vol_sum > 0:
-            vwap_val = (df_i_for_summary["Close"] * df_i_for_summary["Volume"]).sum() / vol_sum
+            vwap_val = ind.vwap_total(df_i_for_summary["Close"], df_i_for_summary["Volume"], curr)
             m_vwap = f"{vwap_val:.2f}"
 
     sample_n, sample_lots = 0, 0
@@ -2574,7 +2542,7 @@ elif page == "🎯 操作策略":
             if not df_i_for_summary.empty:
                 vol_sum = df_i_for_summary["Volume"].sum()
                 if vol_sum > 0:
-                    vwap_val = (df_i_for_summary["Close"] * df_i_for_summary["Volume"]).sum() / vol_sum
+                    vwap_val = ind.vwap_total(df_i_for_summary["Close"], df_i_for_summary["Volume"], curr)
                 
                 buy_v = 0
                 pc = prev_c
@@ -2610,23 +2578,14 @@ elif page == "🎯 操作策略":
         except Exception: pass
 
         try:
-            ma5 = df["Close"].rolling(5).mean().iloc[-1]
-            ma10 = df["Close"].rolling(10).mean().iloc[-1]
-            ma20 = df["Close"].rolling(20).mean().iloc[-1]
+            ma5 = ind.sma(df["Close"], 5).iloc[-1]
+            ma10 = ind.sma(df["Close"], 10).iloc[-1]
+            ma20 = ind.sma(df["Close"], 20).iloc[-1]
             high20 = df["High"].tail(20).max()
             low20 = df["Low"].tail(20).min()
             
-            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-            dif = ema12 - ema26
-            macd = dif.ewm(span=9, adjust=False).mean()
-            osc = (dif - macd).iloc[-1]
-            
-            delta = df['Close'].diff()
-            gain = delta.where(delta > 0, 0).ewm(alpha=1/14, adjust=False).mean()
-            loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-            rs = gain / loss
-            rsi14 = (100 - (100 / (1 + rs))).iloc[-1]
+            osc = ind.macd(df['Close'])[4].iloc[-1]
+            rsi14 = ind.rsi(df['Close'], 14).iloc[-1]
         except Exception:
             ma5 = ma10 = ma20 = high20 = low20 = osc = rsi14 = float('nan')
 
@@ -3017,16 +2976,10 @@ elif page == "🔐 管理後台":
                         st.warning("沒有日K資料")
                     else:
                         c = d_df["Close"]
-                        ema12 = c.ewm(span=12, adjust=False).mean()
-                        ema26 = c.ewm(span=26, adjust=False).mean()
-                        dif = ema12 - ema26
-                        osc_s = dif - dif.ewm(span=9, adjust=False).mean()
-                        dlt = c.diff()
-                        g = dlt.where(dlt > 0, 0).ewm(alpha=1/14, adjust=False).mean()
-                        l_ = (-dlt.where(dlt < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-                        rsi_s = 100 - (100 / (1 + g / l_))
-                        tbl = pd.DataFrame({"Close": c, "MA5": c.rolling(5).mean(), "MA10": c.rolling(10).mean(),
-                                            "MA20": c.rolling(20).mean(), "OSC": osc_s, "RSI14": rsi_s}).tail(20)
+                        osc_s = ind.macd(c)[4]
+                        rsi_s = ind.rsi(c, 14)
+                        tbl = pd.DataFrame({"Close": c, "MA5": ind.sma(c, 5), "MA10": ind.sma(c, 10),
+                                            "MA20": ind.sma(c, 20), "OSC": osc_s, "RSI14": rsi_s}).tail(20)
                         st.dataframe(tbl.round(3), use_container_width=True)
                         q_d = fetch_fugle_quote(diag_symbol, api_key)
                         cur_d = float(q_d.get("lastPrice") or c.iloc[-1])
