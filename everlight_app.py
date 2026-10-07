@@ -3086,6 +3086,44 @@ elif page == "🔐 管理後台":
                             st.caption("請與公開資訊觀測站同一個月份的營收數字核對。")
                         except Exception as e:
                             st.error(f"讀取失敗：{e}")
+
+            # G. 富果其他端點原始資料（第二段用：先看真實格式，不猜 schema；只在盤中才看得到的狀態）
+            with st.expander("G. 富果端點原始資料（K線、成交明細、大盤、排行）", expanded=False):
+                st.caption("只顯示原始回傳，不做任何換算。結果請保留給審查者。")
+                g_presets = {
+                    "K線 1分": ("intraday/candles/{s}", {"timeframe": "1"}),
+                    "K線 5分": ("intraday/candles/{s}", {"timeframe": "5"}),
+                    "成交明細 limit=50": ("intraday/trades/{s}", {"limit": 50}),
+                    "報價（可填指數代號 IX0001／IX0043）": ("intraday/quote/{s}", {}),
+                    "排行：上市成交量": ("snapshot/actives/TSE", {"trade": "volume"}),
+                    "排行：上市漲幅": ("snapshot/movers/TSE", {"direction": "up", "change": "percent"}),
+                    "排行：上市跌幅": ("snapshot/movers/TSE", {"direction": "down", "change": "percent"}),
+                    "全市場快照：上市": ("snapshot/quotes/TSE", {}),
+                }
+                g_name = st.selectbox("要看哪一個", list(g_presets.keys()), key="diag_g_name")
+                if st.button("執行 G", key="diag_g"):
+                    if not api_key:
+                        st.warning("未設定 FUGLE_TOKEN")
+                    else:
+                        g_path, g_params = g_presets[g_name]
+                        g_url = "https://api.fugle.tw/marketdata/v1.0/stock/" + g_path.format(s=diag_symbol)
+                        g_now = now_tpe()
+                        try:
+                            r = requests.get(g_url, headers={"X-API-KEY": api_key}, params=g_params, timeout=15)
+                            st.write("HTTP", r.status_code, "｜本機時間", g_now.strftime("%Y-%m-%d %H:%M:%S"),
+                                     "｜端點", g_path.format(s=diag_symbol), g_params)
+                            try:
+                                raw_g = r.json()
+                            except Exception:
+                                raw_g = {"_非JSON回應": r.text[:2000]}
+                            g_txt = json.dumps(raw_g, ensure_ascii=False)
+                            st.write("回應長度（字元）：", len(g_txt))
+                            st.code(g_txt[:120000], language="json")
+                            st.download_button("下載原始 JSON", data=g_txt,
+                                               file_name=f"fugle_{g_path.split('/')[1]}_{diag_symbol}_{g_now.strftime('%Y%m%d_%H%M%S')}.json",
+                                               mime="application/json", key="diag_g_dl")
+                        except Exception as e:
+                            st.error(f"讀取失敗：{e}")
         elif admin_pwd:
             st.error("密碼錯誤")
         else:
