@@ -13,6 +13,14 @@ import numpy as np
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
+import streamlit as st
+
+
+@pytest.fixture(autouse=True)
+def _clear_streamlit_cache():
+    """每個測試前清掉 st.cache_data：富果報價快取 5 秒，前一個測試的假資料可能被沿用而造成偶發失敗。"""
+    st.cache_data.clear()
+    yield
 
 APP = str(Path(__file__).resolve().parents[1] / "everlight_app.py")
 
