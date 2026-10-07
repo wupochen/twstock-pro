@@ -113,7 +113,7 @@ def test_stale_keeps_three_times_apart():
     n = c.stats.api_calls["quote"]
     clk.tick(3)
     assert c.get("quote", "2330").status == FetchStatus.STALE_AFTER_ERROR
-    assert c.stats.api_calls["quote"] == n
+    assert c.stats.api_calls["quote"] == n and c.stats.backoff_skipped["quote"] == 1
     # 退避結束、來源恢復
     state["fail"] = False
     clk.tick(10)
@@ -165,7 +165,7 @@ def test_concurrent_requests_for_same_key_fetch_once():
 def test_stats_and_invalidate():
     c, _ = _coord(lambda s: {"s": s})
     c.get("quote", "2330"); c.get("quote", "2330")
-    assert c.stats.summary() == ["quote：打 API 1 次、用快取 1 次、失敗 0 次、因上限略過 0 次"]
+    assert c.stats.summary() == ["quote：打 API 1 次、用快取 1 次、失敗 0 次、因上限略過 0 次、失敗退避略過 0 次"]
     assert c.invalidate(symbol="2330") == 1
 
 
