@@ -1,0 +1,28 @@
+{
+  "_說明": "DOC_BASED：從富果官方文件範例照抄，不是真實 API 回應，不能當 Golden。開通後須抓 RAW_CAPTURE 比對才算驗收。",
+  "fugle_snapshot_movers_doc.json": {
+    "origin": "DOC_BASED",
+    "source": "https://developer.fugle.tw/docs/data/http-api/snapshot/movers",
+    "copied": "2026-10-07"
+  },
+  "fugle_snapshot_actives_doc.json": {
+    "origin": "DOC_BASED",
+    "source": "https://developer.fugle.tw/docs/data/http-api/snapshot/actives",
+    "copied": "2026-10-07"
+  },
+  "fugle_ws_authenticated_doc.json": {
+    "origin": "DOC_BASED",
+    "source": "https://developer.fugle.tw/docs/data/websocket-api/getting-started 與 market-data-channels/trades",
+    "copied": "2026-10-07"
+  },
+  "fugle_ws_subscribed_doc.json": {
+    "origin": "DOC_BASED",
+    "source": "https://developer.fugle.tw/docs/data/websocket-api/getting-started 與 market-data-channels/trades",
+    "copied": "2026-10-07"
+  },
+  "fugle_ws_trades_doc.json": {
+    "origin": "DOC_BASED",
+    "source": "https://developer.fugle.tw/docs/data/websocket-api/getting-started 與 market-data-channels/trades",
+    "copied": "2026-10-07"
+  }
+}

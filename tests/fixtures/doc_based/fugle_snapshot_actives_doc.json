@@ -1,0 +1,22 @@
+{
+ "date": "2023-05-29",
+ "time": "140000",
+ "market": "TSE",
+ "trade": "value",
+ "data": [
+  {
+   "type": "EQUITY",
+   "symbol": "2330",
+   "name": "台積電",
+   "openPrice": 574,
+   "highPrice": 574,
+   "lowPrice": 564,
+   "closePrice": 568,
+   "change": 2,
+   "changePercent": 0.35,
+   "tradeVolume": 54538,
+   "tradeValue": 31019803000,
+   "lastUpdated": 1685338200000000
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+{
+ "event": "subscribed",
+ "data": {
+  "id": "<CHANNEL_ID>",
+  "channel": "trades",
+  "symbol": "2330"
+ }
+}

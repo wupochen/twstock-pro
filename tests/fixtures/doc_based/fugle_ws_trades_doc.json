@@ -1,0 +1,19 @@
+{
+ "event": "data",
+ "data": {
+  "symbol": "2330",
+  "type": "EQUITY",
+  "exchange": "TWSE",
+  "market": "TSE",
+  "bid": 567,
+  "ask": 568,
+  "price": 568,
+  "size": 4778,
+  "volume": 54538,
+  "isClose": true,
+  "time": 1685338200000000,
+  "serial": 6652422
+ },
+ "id": "<CHANNEL_ID>",
+ "channel": "trades"
+}

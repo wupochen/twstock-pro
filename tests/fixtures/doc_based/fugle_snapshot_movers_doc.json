@@ -1,0 +1,22 @@
+{
+ "date": "2023-05-29",
+ "time": "133500",
+ "market": "TSE",
+ "change": "percent",
+ "data": [
+  {
+   "type": "EQUITY",
+   "symbol": "2901",
+   "name": "欣欣",
+   "openPrice": 27.1,
+   "highPrice": 29.7,
+   "lowPrice": 27.1,
+   "closePrice": 29.7,
+   "change": 2.7,
+   "changePercent": 10,
+   "tradeVolume": 640,
+   "tradeValue": 18824300,
+   "lastUpdated": 1685338200000000
+  }
+ ]
+}

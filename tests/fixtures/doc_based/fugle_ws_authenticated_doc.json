@@ -1,0 +1,6 @@
+{
+ "event": "authenticated",
+ "data": {
+  "message": "Authenticated successfully"
+ }
+}
