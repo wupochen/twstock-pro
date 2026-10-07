@@ -147,3 +147,17 @@ def test_module_isolated():
     imports = [l for l in src.splitlines() if l.strip().startswith(("import ", "from "))]
     for mod in ("streamlit", "everlight_app", "requests", "yfinance"):
         assert not any(mod in l for l in imports)
+
+
+def test_otc_and_etf_quotes_same_adapter():
+    """上櫃（6488）與 ETF（0050）用同一個報價 adapter；富果 type 對 ETF 也是 EQUITY，
+    所以商品類型不能靠富果判斷（要用 pricing 的 AssetInfo）。"""
+    otc = raw("fugle_quote_6488_otc_20261007_113941.json")
+    etf = raw("fugle_quote_0050_etf_20261007_113946.json")
+    assert (otc["exchange"], otc["market"]) == ("TPEx", "OTC")
+    assert etf["type"] == "EQUITY"
+    for r, t in ((otc, "11:39:41"), (etf, "11:39:46")):
+        sec = db.fugle_quote(r, at(t))
+        assert sec.availability == db.Availability.AVAILABLE
+        assert abs(sec.items["vwap"].value - sec.items["avg_price"].value) <= 0.01
+        assert sec.items["is_limit_up_price"].value is None          # null 保持 None
