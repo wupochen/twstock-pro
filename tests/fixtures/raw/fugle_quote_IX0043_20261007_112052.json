@@ -1,0 +1,32 @@
+{
+ "date": "2026-10-07",
+ "type": "INDEX",
+ "exchange": "TPEx",
+ "market": "OTC",
+ "symbol": "IX0043",
+ "name": "櫃買指數",
+ "previousClose": 430.86,
+ "openPrice": 431.38,
+ "openTime": 1791334805000000,
+ "highPrice": 435.72,
+ "highTime": 1791336160000000,
+ "lowPrice": 429.72,
+ "lowTime": 1791339030000000,
+ "closePrice": 430.33,
+ "closeTime": 1791343250000000,
+ "change": -0.53,
+ "changePercent": -0.12,
+ "amplitude": 1.39,
+ "total": {
+  "transaction": 560949,
+  "tradeValue": 203129362640,
+  "tradeVolume": 1978566,
+  "bidOrders": 4586164,
+  "askOrders": 4893282,
+  "bidVolume": 11718939,
+  "askVolume": 8454262,
+  "time": 1791343250000000
+ },
+ "serial": 1691,
+ "lastUpdated": 1791343250000000
+}

@@ -1,0 +1,32 @@
+{
+ "date": "2026-10-07",
+ "type": "INDEX",
+ "exchange": "TWSE",
+ "market": "TSE",
+ "symbol": "IX0001",
+ "name": "發行量加權股價指數",
+ "previousClose": 49822.55,
+ "openPrice": 49857.32,
+ "openTime": 1791334805000000,
+ "highPrice": 49966.89,
+ "highTime": 1791336100000000,
+ "lowPrice": 49567.52,
+ "lowTime": 1791334820000000,
+ "closePrice": 49722.62,
+ "closeTime": 1791343245000000,
+ "change": -99.93,
+ "changePercent": -0.2,
+ "amplitude": 0.8,
+ "total": {
+  "transaction": 1835781,
+  "tradeValue": 632306128350,
+  "tradeVolume": 6831829,
+  "bidOrders": 13902991,
+  "askOrders": 16809031,
+  "bidVolume": 41714273,
+  "askVolume": 28977554,
+  "time": 1791343245000000
+ },
+ "serial": 1690,
+ "lastUpdated": 1791343245000000
+}

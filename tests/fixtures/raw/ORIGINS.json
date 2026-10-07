@@ -1,8 +1,79 @@
 {
   "_說明": "每個 fixture 的來源等級。RAW_CAPTURE＝真實原始資料原封不動；RECONSTRUCTED_FROM_UAT＝依 UAT 紀錄的欄位重建；SYNTHETIC_WITH_REAL_FIELDS＝欄位格式真實、部分數值為測試用。只有 RAW_CAPTURE 可以當 Golden 原始證據。",
-  "fugle_quote_2330_20261007_0932.json": {"origin": "RAW_CAPTURE", "captured": "2026-10-07 09:32:06 台北，測試站管理後台診斷 B"},
-  "twse_t86_20261006.json": {"origin": "RAW_CAPTURE", "captured": "2026-10-07 證交所 T86 API（只保留 1711、2330、2317 三列）"},
-  "fugle_quote_1711_20261006_close_locked.json": {"origin": "RECONSTRUCTED_FROM_UAT", "captured": "2026-10-06 收盤後 UAT 診斷 B 紀錄"},
-  "finmind_institutional_1416.json": {"origin": "SYNTHETIC_WITH_REAL_FIELDS", "captured": "外資淨額為 T86 對帳真實值；buy/sell 拆分與其他列為測試用"},
-  "finmind_revenue_1711.json": {"origin": "SYNTHETIC_WITH_REAL_FIELDS", "captured": "月份對應與 2026/08 營收 7.47 億為實測；其他數值為測試用"}
+  "fugle_quote_2330_20261007_0932.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 09:32:06 台北，測試站管理後台診斷 B"
+  },
+  "twse_t86_20261006.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 證交所 T86 API（只保留 1711、2330、2317 三列）"
+  },
+  "fugle_quote_1711_20261006_close_locked.json": {
+    "origin": "RECONSTRUCTED_FROM_UAT",
+    "captured": "2026-10-06 收盤後 UAT 診斷 B 紀錄"
+  },
+  "finmind_institutional_1416.json": {
+    "origin": "SYNTHETIC_WITH_REAL_FIELDS",
+    "captured": "外資淨額為 T86 對帳真實值；buy/sell 拆分與其他列為測試用"
+  },
+  "finmind_revenue_1711.json": {
+    "origin": "SYNTHETIC_WITH_REAL_FIELDS",
+    "captured": "月份對應與 2026/08 營收 7.47 億為實測；其他數值為測試用"
+  },
+  "fugle_candles_1438_1m_lowliq_20261007_112221.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:22:21 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_1711_1m_20261007_112020.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:20 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_1711_5m_20261007_112026.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2330_1m_20261007_112005.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:05 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2330_1m_20261007_112650.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:26:50 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2330_5m_20261007_112011.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:11 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2330_5m_20261007_112656.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:26:56 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2701_1m_lowliq_20261007_112216.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:22:16 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_2701_5m_lowliq_20261007_112243.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:22:43 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_candles_9944_1m_lowliq_20261007_112226.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:22:26 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_quote_IX0001_20261007_112047.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:47 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_quote_IX0043_20261007_112052.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:20:52 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_snapshot_actives_TSE_403_20261007_112102.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:21:02 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  },
+  "fugle_trades_2330_limit50_20261007_112127.json": {
+    "origin": "RAW_CAPTURE",
+    "captured": "2026-10-07 11:21:27 台北，測試站管理後台診斷 G（欄位與數值未修改，只重新排版縮排）"
+  }
 }
