@@ -48,34 +48,51 @@ def test_average_is_day_vwap():
     assert by[at("09:31:00")]["day_average"] <= 2568.99 <= by[at("09:32:00")]["day_average"]
 
 
-def test_live_bar_not_completed_and_recently_closed_bar_can_still_change():
+def test_bars_are_provisional_until_settle_lag_and_revisions_are_real():
     first = cd.fugle_candles(raw("fugle_candles_2330_1m_20261007_112005.json"), at("11:20:05"), 1)
     later = cd.fugle_candles(raw("fugle_candles_2330_1m_20261007_112650.json"), at("11:26:50"), 1)
     a = {r["start"]: r for r in first.rows}[at("11:19:00")]
     b = {r["start"]: r for r in later.rows}[at("11:19:00")]
     assert (a["volume"], a["close"]) == (21, 2575) and (b["volume"], b["close"]) == (30, 2570)   # 真的被修正
-    assert a["completed"] is False            # 結束後 5 秒：還不算完成（緩衝 60 秒）
-    assert b["completed"] is True
-    assert cd.live_bar(first)["start"] == at("11:19:00")
-    assert all(r["completed"] for r in cd.completed_bars(first))
-    # 緩衝設 0 會把還在變的 K 棒當成完成 → 這就是不能設 0 的原因
-    assert cd.fugle_candles(raw("fugle_candles_2330_1m_20261007_112005.json"), at("11:20:05"), 1,
-                            grace_seconds=0).rows[-1]["completed"] is True
+    assert a["state"] == cd.PROVISIONAL and b["state"] == cd.SETTLED          # 結束後 5 秒暫定；6 分多鐘後 SETTLED
+    assert first.meta["has_final_flag"] is False
+    # 資料源沒有「已定案」欄位
+    assert set(raw("fugle_candles_2330_1m_20261007_112005.json")["data"][0]) == \
+        {"date", "open", "high", "low", "close", "volume", "average"}
+    assert all(r["state"] == cd.SETTLED for r in cd.settled_bars(first))
+    assert all(r["state"] == cd.PROVISIONAL for r in cd.provisional_bars(first))
+    # 結束後 120 秒才 SETTLED：11:20:05 時，11:17 那根（11:18 結束）剛好過 2 分鐘 → 最後 SETTLED 是 11:17
+    assert first.meta["latest_bar_as_of"] == at("11:19:00")
+    assert first.meta["latest_settled_bar_as_of"] == at("11:17:00")
+    with pytest.raises(ValueError):
+        cd.fugle_candles(raw("fugle_candles_2330_1m_20261007_112005.json"), at("11:20:05"), 1, settle_seconds=30)
 
 
-def test_5m_boundaries_and_matches_completed_1m():
+def test_revision_study_supports_settle_seconds():
+    study = raw("fugle_candles_revision_study_20261007.json")
+    r = cd.revision_lags(study["obs"])
+    assert r["2330"]["watched"] == 37 and r["1711"]["watched"] == 37
+    assert r["2330"]["revised_after_end"] + r["1711"]["revised_after_end"] == 29
+    worst = max(r["2330"]["max_lag"], r["1711"]["max_lag"])
+    assert worst == 18 and worst * 6 <= cd.DEFAULT_SETTLE_SECONDS < 60 * 5
+    assert r["2701"]["revised_after_end"] == 0
+
+
+def test_5m_boundaries_and_matches_settled_1m():
     m5 = cd.fugle_candles(raw("fugle_candles_2330_5m_20261007_112656.json"), at("11:26:56"), 5)
     assert all(r["start"].minute % 5 == 0 and r["start"].second == 0 for r in m5.rows)
     m1 = cd.fugle_candles(raw("fugle_candles_2330_1m_20261007_112650.json"), at("11:26:50"), 1)
-    agg = {b["start"]: b for b in cd.aggregate(cd.completed_bars(m1), 5)}
-    done5 = [r for r in m5.rows if r["completed"] and r["start"] in agg]
-    assert len(done5) >= 25
-    for r in done5:
+    settled = cd.settled_bars(m1)
+    last_end = settled[-1]["end"]
+    agg = {b["start"]: b for b in cd.aggregate(settled, 5) if b["end"] <= last_end}
+    same = [r for r in m5.rows if r["start"] in agg]
+    assert len(same) >= 24
+    for r in same:
         a = agg[r["start"]]
         assert (a["open"], a["high"], a["low"], a["close"], a["volume"]) == \
                (r["open"], r["high"], r["low"], r["close"], r["volume"]), r["start"]
     with pytest.raises(ValueError):
-        cd.aggregate(m1.rows, 5)               # 含未完成 K 棒不准聚合
+        cd.aggregate(m1.rows, 5)               # 含暫定 K 棒不准聚合
 
 
 def test_low_liquidity_no_filler_bars():
@@ -103,7 +120,7 @@ def test_bundle_metadata_and_status_line():
     b = db.DataBundle("2330")
     b.add("5分K", "Fugle", lambda: cd.fugle_candles(raw("fugle_candles_2330_5m_20261007_112011.json"), at("11:20:11"), 5))
     sec = b.get("5分K")
-    assert sec.meta["grace_seconds"] == 60 and sec.meta["as_of_means"]
+    assert sec.meta["settle_seconds"] == 120 and sec.meta["as_of_means"] and sec.meta["latest_settled_bar_as_of"] is not None
     assert "5分K：Fugle（VENDOR），資料時間 2026-10-07 11:20:00" in b.data_status_text()[0]
 
 
